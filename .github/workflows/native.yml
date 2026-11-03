@@ -53,7 +53,7 @@ jobs:
         with:
           python-version: '3.14.0'
       - name: Build and run independent native consumer
-        run: python tests/native.py --expected-platform "${{ matrix.platform }}" --cc-version "${{ matrix.cc_version }}"
+        run: python tests/native.py --expected-platform "${{ matrix.platform }}" --cc-version "${{ matrix.cc_version }}" --source-commit "${{ github.sha }}"
       - name: Retain failure and success evidence
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -2,7 +2,7 @@
 """Run existing public consumers natively from a standalone content-pinned module."""
 import argparse,hashlib,json,os,pathlib,platform,shutil,subprocess,sys,tempfile,time,zipfile
 ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'tools'));from snapshot import create
-p=argparse.ArgumentParser();p.add_argument('--expected-platform',required=True);p.add_argument('--cc-version');p.add_argument('--output',type=pathlib.Path,default=ROOT/'artifacts/native');args=p.parse_args();out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
+p=argparse.ArgumentParser();p.add_argument('--expected-platform',required=True);p.add_argument('--cc-version');p.add_argument('--source-commit',help='require module bytes to match this Git commit');p.add_argument('--output',type=pathlib.Path,default=ROOT/'artifacts/native');args=p.parse_args();out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
 env=os.environ.copy();env.update(GOWORK='off',CGO_ENABLED='1',GOTOOLCHAIN='local');go=env.get('GO') or (str(pathlib.Path(env['GOROOT'])/'bin/go') if env.get('GOROOT') else shutil.which('go'));cc=env.get('CC') or ('gcc' if os.name=='nt' else 'cc')
 report={'expectedPlatform':args.expected_platform,'python':sys.version,'host':platform.platform(),'runnerImage':{k:env.get(k) for k in ('ImageOS','ImageVersion','RUNNER_OS','RUNNER_ARCH')},'steps':[],'assertions':{},'stageResults':{}}
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
@@ -28,6 +28,16 @@ try:
   report['assertions']['cCompilerVersion']=args.cc_version in cc_output
   if not report['assertions']['cCompilerVersion']:raise RuntimeError('C compiler version does not match pinned CI toolchain')
  manifest=create(out/'module-proxy');report['snapshot']=manifest
+ report['gitProvenance']={'available':(ROOT/'.git').exists()}
+ if args.source_commit:
+  if not report['gitProvenance']['available']:raise RuntimeError('source commit verification requires Git metadata')
+  provenance=report['gitProvenance'];provenance['commit']=required(['git','rev-parse','--verify',args.source_commit+'^{commit}'],ROOT).strip();provenance['files']={}
+  for name,digest in manifest['files'].items():
+   expected=required(['git','rev-parse',provenance['commit']+':'+name],ROOT).strip()
+   actual=required(['git','hash-object','--no-filters',str(ROOT/name)],ROOT).strip()
+   provenance['files'][name]={'commitObject':expected,'checkoutObject':actual,'matchesCommit':expected==actual and sha(ROOT/name)==digest}
+  report['assertions']['snapshotMatchesCommit']=bool(provenance['files']) and all(v['matchesCommit'] for v in provenance['files'].values())
+  if not report['assertions']['snapshotMatchesCommit']:raise RuntimeError('module snapshot differs from committed source bytes')
  with tempfile.TemporaryDirectory(prefix='toolkit-native-') as directory:
   c=pathlib.Path(directory)/'consumer';shutil.copytree(ROOT/'tests/consumer',c)
   (c/'go.mod').write_text('module toolkit-native-consumer\n\ngo '+version+'\n\nrequire '+manifest['module']+' '+manifest['version']+'\n')

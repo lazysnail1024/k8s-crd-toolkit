@@ -16,6 +16,19 @@ The runner creates a content-addressed local module proxy, builds an independent
 
 The [native CI workflow](../.github/workflows/native.yml) runs the same entry point on five native runners. Its pinned Go, Python, Actions, and accepted C compiler versions are defined in the workflow. GitHub runner images change over time; evidence records their image versions rather than claiming bit-identical images.
 
+The optional `--source-commit <commit>` requires every packaged runtime file to match the raw Git object in that commit. CI passes its exact source commit. Reports record the commit and both object IDs; missing Git metadata, an unavailable commit, or any byte difference fails verification. Default runs consume the current working tree, including uncommitted edits, and source archives without Git remain supported. `.gitattributes` fixes text files to LF so the same commit produces identical snapshot and contract identities on every native platform.
+
+The checkout E2E exercises this behavior with two real temporary Git checkouts, `core.autocrlf=false` and `true`. Both package the public module and run all eight native consumer suites. Both request explicit commit verification. Expected bytes come directly from the temporary commit's Git blobs, independently of the snapshot packager. Additional cases consume an uncommitted runtime edit through the default entry point and reject explicit verification with a missing commit or missing Git metadata:
+
+```sh
+python3 tests/checkout_e2e.py
+python3 tests/snapshot_e2e.py
+```
+
+Run this entry point on Linux amd64. It saves the exact source archive, Git settings and commands, module/contract identities, byte comparisons, and native consumer reports under `artifacts/checkout/`. `--output` chooses another evidence directory. `--without-attributes` removes the checkout policy only in the temporary source fixture; this deliberate counterexample must fail the byte-identity checks. It never changes the caller's Git index or configuration.
+
+`snapshot_e2e.py` compares complete module ZIP bytes from the real snapshot CLI under the native ZIP creator default and an isolated subprocess reproducing the constructor default observed on Windows. It retains both outputs and exact inputs under `artifacts/snapshot/`. This environment experiment is not native Windows acceptance. The CI matrix must also produce the same source, contract, version, and ZIP digests on all five platforms. ZIP creator metadata is fixed to Unix to match the archive's existing Unix permission bits.
+
 ## Individual suites and ablations
 
 ```sh

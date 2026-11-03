@@ -1,0 +1,2 @@
+# Keep source snapshots identical across native Git checkouts.
+* text=auto eol=lf

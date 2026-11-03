@@ -15,7 +15,7 @@ def create(destination):
  data=io.BytesIO()
  with zipfile.ZipFile(data,'w',compression=zipfile.ZIP_DEFLATED) as z:
   for n,b in contents.items():
-   i=zipfile.ZipInfo(MODULE+'@'+version+'/'+n,date_time=(1980,1,1,0,0,0));i.compress_type=zipfile.ZIP_DEFLATED;i.external_attr=0o100644<<16;z.writestr(i,b)
+   i=zipfile.ZipInfo(MODULE+'@'+version+'/'+n,date_time=(1980,1,1,0,0,0));i.compress_type=zipfile.ZIP_DEFLATED;i.create_system=3;i.external_attr=0o100644<<16;z.writestr(i,b)
  base=destination/MODULE/'@v';base.mkdir(parents=True,exist_ok=True)
  for suffix,b in {'.zip':data.getvalue(),'.mod':contents['go.mod'],'.info':(json.dumps({'Version':version})+'\n').encode()}.items():
   p=base/(version+suffix)
