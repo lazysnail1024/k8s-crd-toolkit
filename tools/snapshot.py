@@ -8,14 +8,14 @@ def create(destination):
  paths=[ROOT/x for x in ('go.mod','go.sum','LICENSE','CONTRACT.md')]
  for name in ('source','edit','yamlview'):paths.extend(p for p in (ROOT/name).rglob('*') if p.is_file() and not p.name.endswith('_test.go'))
  contents={}
- for p in sorted(paths):
+ for p in sorted(paths,key=lambda p:p.relative_to(ROOT).as_posix()):
   if p.is_symlink() or not p.is_file():raise ValueError('missing/linked runtime input: '+str(p))
   contents[p.relative_to(ROOT).as_posix()]=p.read_bytes()
  hashes={n:hashlib.sha256(b).hexdigest() for n,b in contents.items()};digest=hashlib.sha256(json.dumps(hashes,sort_keys=True,separators=(',',':')).encode()).hexdigest();version='v0.0.0-local.g'+digest[:16]
  data=io.BytesIO()
- with zipfile.ZipFile(data,'w',compression=zipfile.ZIP_DEFLATED) as z:
+ with zipfile.ZipFile(data,'w',compression=zipfile.ZIP_STORED) as z:
   for n,b in contents.items():
-   i=zipfile.ZipInfo(MODULE+'@'+version+'/'+n,date_time=(1980,1,1,0,0,0));i.compress_type=zipfile.ZIP_DEFLATED;i.create_system=3;i.external_attr=0o100644<<16;z.writestr(i,b)
+   i=zipfile.ZipInfo(MODULE+'@'+version+'/'+n,date_time=(1980,1,1,0,0,0));i.compress_type=zipfile.ZIP_STORED;i.create_system=3;i.external_attr=0o100644<<16;z.writestr(i,b)
  base=destination/MODULE/'@v';base.mkdir(parents=True,exist_ok=True)
  for suffix,b in {'.zip':data.getvalue(),'.mod':contents['go.mod'],'.info':(json.dumps({'Version':version})+'\n').encode()}.items():
   p=base/(version+suffix)
