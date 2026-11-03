@@ -1,0 +1,16 @@
+/artifacts/
+/build/
+/dist/
+/coverage/
+/reports/
+/go.work
+/go.work.sum
+*.test
+*.prof
+
+__pycache__/
+
+# Local development instructions and planning; retained outside release tracking.
+/AGENTS.md
+/DESIGN.md
+/tests/FAILURE_MODES.md

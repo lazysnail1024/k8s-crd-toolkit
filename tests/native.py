@@ -1,0 +1,58 @@
+#!/usr/bin/env python3
+"""Run existing public consumers natively from a standalone content-pinned module."""
+import argparse,hashlib,json,os,pathlib,platform,shutil,subprocess,sys,tempfile,time,zipfile
+ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'tools'));from snapshot import create
+p=argparse.ArgumentParser();p.add_argument('--expected-platform',required=True);p.add_argument('--cc-version');p.add_argument('--output',type=pathlib.Path,default=ROOT/'artifacts/native');args=p.parse_args();out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
+env=os.environ.copy();env.update(GOWORK='off',CGO_ENABLED='1',GOTOOLCHAIN='local');go=env.get('GO') or (str(pathlib.Path(env['GOROOT'])/'bin/go') if env.get('GOROOT') else shutil.which('go'));cc=env.get('CC') or ('gcc' if os.name=='nt' else 'cc')
+report={'expectedPlatform':args.expected_platform,'python':sys.version,'host':platform.platform(),'runnerImage':{k:env.get(k) for k in ('ImageOS','ImageVersion','RUNNER_OS','RUNNER_ARCH')},'steps':[],'assertions':{},'stageResults':{}}
+sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
+def run(argv,cwd,timeout=180):
+ try:
+  r=subprocess.run(argv,cwd=cwd,env=env,text=True,capture_output=True,timeout=timeout);step=dict(argv=argv,stdout=r.stdout,stderr=r.stderr,exitCode=r.returncode)
+ except Exception as e:step=dict(argv=argv,stdout=str(getattr(e,'stdout','')),stderr=str(getattr(e,'stderr',''))+'\n'+repr(e),exitCode=124 if isinstance(e,subprocess.TimeoutExpired) else 127)
+ report['steps'].append(step)
+ return step
+def required(argv,cwd):
+ r=run(argv,cwd)
+ if r['exitCode']:raise RuntimeError('command failed: '+repr(argv))
+ return r['stdout']
+try:
+ if not go:raise RuntimeError('Go not found')
+ info=json.loads(required([go,'env','-json','GOHOSTOS','GOHOSTARCH','GOOS','GOARCH','GOVERSION','GOROOT','GOMODCACHE','CC'],ROOT));report['goEnvironment']=info
+ expected='/'.join([info['GOHOSTOS'],info['GOHOSTARCH']]);report['assertions']['nativeHost']=expected==args.expected_platform and expected==info['GOOS']+'/'+info['GOARCH']
+ if not report['assertions']['nativeHost']:raise RuntimeError('native platform mismatch; cross compilation is not acceptance')
+ version=next(x.split()[1] for x in (ROOT/'go.mod').read_text().splitlines() if x.startswith('go '));report['assertions']['goVersion']=info['GOVERSION']=='go'+version
+ if not report['assertions']['goVersion']:raise RuntimeError('Go toolchain must match go.mod')
+ cc_output=required([cc,'--version'],ROOT);report['compilerVersion']=cc_output
+ if args.cc_version:
+  report['assertions']['cCompilerVersion']=args.cc_version in cc_output
+  if not report['assertions']['cCompilerVersion']:raise RuntimeError('C compiler version does not match pinned CI toolchain')
+ manifest=create(out/'module-proxy');report['snapshot']=manifest
+ with tempfile.TemporaryDirectory(prefix='toolkit-native-') as directory:
+  c=pathlib.Path(directory)/'consumer';shutil.copytree(ROOT/'tests/consumer',c)
+  (c/'go.mod').write_text('module toolkit-native-consumer\n\ngo '+version+'\n\nrequire '+manifest['module']+' '+manifest['version']+'\n')
+  (c/'go.sum').write_bytes((ROOT/'go.sum').read_bytes());env['GOPROXY']=(out/'module-proxy').as_uri()+','+env.get('GOPROXY','https://proxy.golang.org');env['GONOSUMDB']=manifest['module'];env['CC']=cc
+  report['environment']={k:env.get(k) for k in ('CC','GOWORK','CGO_ENABLED','GOTOOLCHAIN','GOPROXY','GONOSUMDB')}
+  required([go,'mod','tidy'],c);required([go,'mod','verify'],c);report['moduleGraph']=required([go,'list','-m','all'],c);report['assertions']['noReplace']='=>' not in report['moduleGraph'] and 'replace' not in (c/'go.mod').read_text()
+  report['consumerGoMod']=(c/'go.mod').read_text();report['consumerGoSum']=(c/'go.sum').read_text()
+  archive=out/'inputs.zip'
+  with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED) as z:
+   for prefix,tree in [('consumer',c),('tools',ROOT/'tools'),('tests',ROOT/'tests')]:
+    for f in tree.rglob('*'):
+     if f.is_file() and '__pycache__' not in f.parts:z.write(f,prefix+'/'+f.relative_to(tree).as_posix())
+  report['inputArchiveSHA256']=sha(archive)
+  binary=out/('consumer.exe' if os.name=='nt' else 'consumer');required([go,'build','-trimpath','-mod=readonly','-buildvcs=false','-o',str(binary),'.'],c);report['binarySHA256']=sha(binary);required([go,'version','-m',str(binary)],c)
+  licenses=out/'licenses';licenses.mkdir(exist_ok=True);shutil.copyfile(ROOT/'LICENSE',licenses/'toolkit-MIT');shutil.copyfile(pathlib.Path(info['GOROOT'])/'LICENSE',licenses/'Go-BSD');shutil.copyfile(ROOT/'yamlview/internal/parser/grammar/LICENSE',licenses/'yaml-grammar-MIT')
+  for module in ['github.com/tree-sitter/go-tree-sitter','github.com/mattn/go-pointer']:
+   meta=json.loads(required([go,'list','-m','-json',module],c));source=pathlib.Path(meta['Dir']);name=module.rsplit('/',1)[1]
+   shutil.copyfile(source/'LICENSE',licenses/(name+'-MIT'))
+   if (source/'src/unicode/LICENSE').is_file():shutil.copyfile(source/'src/unicode/LICENSE',licenses/'tree-sitter-Unicode')
+  for stage in ['source','edit','yaml','audit','budget','retention','resume','resources']:
+   r=run([str(binary),stage],c)
+   try:values=json.loads(r['stdout']);report['stageResults'][stage]=values;report['assertions'][stage]=r['exitCode']==0 and bool(values) and all(v is True for v in values.values())
+   except Exception:report['assertions'][stage]=False
+except Exception as e:report['error']=repr(e)
+finally:
+ report['assertions']['eightNonemptySuites']=len(report['stageResults'])==8 and all(bool(v) for v in report['stageResults'].values())
+ report['passed']='error' not in report and bool(report['assertions']) and all(report['assertions'].values()) and all(s['exitCode']==0 for s in report['steps']);report['replay']=sys.argv
+ text=json.dumps(report,indent=2);(out/'report.json').write_text(text);(out/('report-'+str(time.time_ns())+'.json')).write_text(text);print(json.dumps({'passed':report['passed'],'assertions':report['assertions'],'error':report.get('error')}));sys.exit(0 if report['passed'] else 1)
