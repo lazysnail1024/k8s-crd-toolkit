@@ -16,6 +16,7 @@ import (
 
 func indexCases() {
 	indexTicketCases()
+	indexReuseCases()
 	indexDependencyCases()
 	indexIdentityCases()
 	indexSymbolOrderCases()

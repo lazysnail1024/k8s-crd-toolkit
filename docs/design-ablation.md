@@ -356,3 +356,51 @@ with their designated behavior assertion failing. `index-missing` also fails the
 new reference-only target-arrival cases. A compiler error, timeout or crash is not
 accepted as detecting a fault. The durable inputs and runner remain in the
 existing consumer and ablation tools; no new testing framework was added.
+
+
+## Third round: remove duplicate consumer lifecycle state
+
+The consumer baselines are Argo CD `27ca68efffa4c15dbf5d782e96871b193983ce2d`
+and Workflows `0b18cd72edb5ced85ab794ec800d9b0e00cf409a`; the provider baseline
+is `79c46c0625b94d61156e40994ac603db69e2438f`. These consumers had adopted
+Documents, Queue, Scanner, and Index, but still separately implemented running
+work, overflow recovery, scan generations, and retained-fact reuse.
+
+| Removed consumer mechanism | Adopted replacement | Required observation |
+|---|---|---|
+| CD queue membership/order/free slots/refill cursor and WF periodic full-file queue refill | WorkQueue owns waiting, execution reservations, retained overflow, and promotion | A full ready window preserves every accepted URI and its priority; running edits are replayed after completion |
+| Independent scan-generation deletion checks | Membership pass and per-file Observation | A watcher-added file in an already scanned directory survives the current sweep; failed/superseded scans cannot authorize deletion |
+| WF second document update/revision stream and duplicate open-byte counters | The protocol adapter and catalog share Documents snapshots and OpenBytes | Root removal, budget refusal, close/reopen, and editor-version checks retain input authority |
+| WF copied pending Facts with a separate budget, and CD permanent Summary.Facts duplicate | Index.Reuse restores its own retained same-scope commit | Pending locations stay hidden; stale tickets and changed scopes cannot restore old facts |
+
+These are replacements in the real plugins, not only a new shared facade. The
+plugins retain resource recognition, namespace/template policy, configuration,
+worker execution, domain completeness, and publication proofs. The toolkit adds
+no LSP server, watcher, worker goroutine, timer, configuration registry, or domain
+callback. Membership adds no second file map; one Observation replaces each
+consumer's old seen-generation field.
+
+WorkTicket is deliberately an execution reservation rather than another input
+revision. It prevents concurrent execution for one URI and ensures a late
+completion cannot discard a recreation or running-file update. Documents and
+Index retain their input/publication responsibilities. The notification-only
+Queue remains supported, and both queues use the same priority-turn selector.
+
+The ready window stays at 512 in both plugins and the file-entry limit stays at
+100,000. Outstanding work additionally reserves the fixed worker count (one in
+CD, two in Workflows), because removed workers can still be exiting. This does
+not increase the accepted file count. True admission exhaustion remains an
+explicit incomplete/error outcome.
+
+Local independent consumers passed 210 index assertions and 277 workspace
+assertions with and without Go's race detector. The workspace concurrency case
+uses four producers, four workers, 32 URIs, and 1,024 notifications. The actual
+native delivery runner also exercised all ten suites using a source snapshot
+and no replace directive. It records the exact test/source archive; later
+additions to consumer assertions are separately identified by their reports.
+
+Four buildable negative controls detect removal of same-scope reuse, overflow
+fairness, completion-time follow-up retention, and complete-scan deletion
+protection. They verify the replacement's guards; the design simplification is
+the deletion of the consumer mechanisms above. Final language-server protocol,
+resource, and native-platform acceptance belongs in the two consumer PRs.

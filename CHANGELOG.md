@@ -1,12 +1,17 @@
 # Changelog
 
-## v0.0.1-alpha
+## Unreleased — shared file lifecycle (`toolkit-design-3`)
 
-First Go module prerelease of contract `toolkit-design-2` for independent plugin integration.
+- Share bounded ready/running/deferred work and scan observation bookkeeping between the two language servers.
+- Let consumers reuse unchanged retained index facts without maintaining another copy and its memory budget.
+- Expose the authoritative open-text byte count to remove duplicate consumer counters.
+- Keep resource recognition, configuration, diagnostics, worker concurrency, and LSP publication in the plugins.
 
-```sh
-go get github.com/lazysnail1024/k8s-crd-toolkit@v0.0.1-alpha
-```
+Consumers pin source commits and Go pseudo-versions. This change does not publish a tag or release.
+
+## Initial source integration (`toolkit-design-2`)
+
+The initial prerelease was prepared but not published; the two plugins consumed the source commit directly.
 
 ### Included
 
@@ -16,13 +21,13 @@ go get github.com/lazysnail1024/k8s-crd-toolkit@v0.0.1-alpha
 - Incremental per-file definitions, references, reverse dependencies, stale-result rejection, and bounded symbol search.
 - Authoritative open buffers, disk-read tickets, bounded priority scheduling, and resumable directory discovery.
 
-The two design-ablation rounds removed redundant states and unnecessary symbol-tree requirements before this release. Resource limits, input freshness, unresolved reverse dependencies, and foreground scheduling remain part of the public contract.
+The two initial design-ablation rounds removed redundant states and unnecessary symbol-tree requirements. Resource limits, input freshness, unresolved reverse dependencies, and foreground scheduling remain part of the public contract.
 
 ### Integration requirements
 
 - Go 1.27.3. `yamlview` also needs `CGO_ENABLED=1` and a native C compiler; the other public packages do not require CGO.
 - Pin the module version and retain `go.sum`. Contract-based consumers must also pin the byte-identical `CONTRACT.md` and its SHA-256.
-- This release is a source library. Plugins still implement resource recognition, Argo reference binding, LSP adaptation, worker scheduling, and editor integration.
+- This is a source library. Plugins still implement resource recognition, Argo reference binding, LSP adaptation, worker execution, and editor integration.
 - Alpha APIs may change incompatibly in later versions. Such changes require documented contract revisions and explicit consumer upgrades. Existing version tags will not be moved.
 
 ### Validation scope

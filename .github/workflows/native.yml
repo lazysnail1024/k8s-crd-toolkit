@@ -89,9 +89,11 @@ jobs:
       - name: Verify index and workspace guards with buildable ablations
         run: >-
           python tests/ablate.py
-          index-ticket index-missing index-position index-fresh index-retention
+          index-ticket index-reuse index-missing index-position index-fresh index-retention
           workspace-overlay workspace-ticket workspace-discard
           workspace-coalescing workspace-fairness workspace-priority
+          workspace-workqueue-fairness workspace-workqueue-followup
+          workspace-membership-complete
           workspace-complete workspace-filter
       - name: Retain regression evidence
         if: always()

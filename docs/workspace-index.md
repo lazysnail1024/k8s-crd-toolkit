@@ -18,13 +18,20 @@ compose those APIs; it does not add another contract or an application framework
 | `yamlview` syntax and source locations | Recognize resources, decode scalars, project aliases/overrides, resolve domain scope |
 | `workspace.Documents` buffers and read tickets | Read bounded disk content, accept events in order, handle read failures |
 | `workspace.Scanner` resumable membership discovery | Roots, exclusions, extensions, watcher/reconciliation policy |
-| `workspace.Queue` coalescing and fair service | Worker concurrency, foreground execution slots, backpressure |
+| `workspace.WorkQueue` coalescing, running reservations, overflow, and fair service | Worker concurrency, foreground execution slots, explicit capacity failure handling |
+| `workspace.Membership` pass/observation validity and safe sweep candidates | File registry, watcher events, open-buffer protection, domain completeness |
 | `index` summaries, candidates, reverse dependencies | Keys, signatures, bindings, diagnostics, LSP features, safe refactoring |
 | `edit` one-snapshot text preconditions | Multi-file edit planning and client-side application/version checks |
 
 The runtime never imports either Argo repository. Domain names appear only in
 documentation and fixed consumer fixtures. There is no parser plugin registry,
 generic configuration bag, automatic schema selection, or domain callback.
+
+The protocol adapter should use one Documents store for accepted snapshots and
+open-text accounting. Keeping a reference to its immutable Snapshot in request
+state is useful; replaying each edit into a second store creates unnecessary
+revision and budget synchronization. Keep editor version and refusal reasons in
+the protocol adapter, and use Documents.OpenBytes when reserving read capacity.
 
 ## Accept events before starting analysis
 
@@ -54,6 +61,12 @@ are each thread-safe; operations spanning the two are not a single transaction.
    older worker must not discard a newer accepted input.
 5. Schedule Change.Affected for domain recomputation. References to missing
    targets must already be registered, so a target created later can wake them.
+
+When a fresh read has identical bytes and unchanged interpretation settings,
+call Index.Reuse with the current ticket. The index already retains the old
+facts while pending; the consumer need not clone and separately budget them.
+ErrNoPrevious leaves the ticket usable for analysis and Commit. A content hash
+alone is insufficient after a configuration or target change.
 
 For an affected file whose accepted input has been released, obtain its open
 snapshot or perform a fresh bounded disk read, accept the input, and call Begin
@@ -93,29 +106,33 @@ and protocol responsibilities.
 
 ## Keep foreground work available
 
-The Queue offers Current, Related, and Background service in an 8:4:1 weighted
-cycle. It stores URI notifications and coalesces pending notifications at the
-highest requested priority. Taking a job releases its pending slot immediately,
-so an update that arrives while old work runs is not lost.
+Use WorkQueue for persistent file processing. It coalesces URI notifications at
+their highest priority and preserves them outside the bounded ready window.
+Current, Related, and Background receive 8:4:1 weighted service across ready and
+deferred work. A foreground event can displace background ready work without
+losing it; even a one-entry ready window preserves background service.
 
-When dispatching a URI, obtain its latest accepted snapshot and original index
-ticket from the coordinator. The coordinator already needs this input: Queue
-never owns snapshots, and Documents retains only open buffers. A late notification
-therefore selects current work or, if there is no accepted input, is ignored.
-Deleting a file also discards its accepted work and calls Index.Remove; a later
-notification alone cannot restore it. Queue does not assign another generation
-or decide whether a worker's result is current. Documents and Index tickets
-protect the separate read and analysis publication stages.
+Pop grants one WorkTicket; defer Complete immediately so every worker exit
+releases it. An event during execution is preserved as a later run, never a
+concurrent execution for that URI. Remove/recreate also waits for the retired
+worker to exit. This token identifies an execution reservation, not a source
+revision. Obtain the latest accepted snapshot and original index ticket from
+the coordinator; Documents and Index still protect publication freshness.
+
+Workers Pop first and wait on Wake or cancellation when empty. No periodic
+full-file scan is needed to refill ready work. Pending/Waiting/Running replace
+consumer copies of dirty, queued, overflow, and running membership. The simple
+Queue remains available for consumers needing only pending notifications.
 
 The queue does not interrupt work already running. Keep a foreground execution
 opportunity available, bound background concurrency, and cancel superseded work
 where possible. OS I/O may remain blocked until the syscall returns; ticket
 checks are still needed even when cancellation was requested.
 
-On ErrLimit, preserve the event and pause discovery or retry later. In particular,
-do not consume a Scanner batch, silently drop paths that did not fit the Queue,
-and later claim that discovery and analysis completed successfully. Keep the
-unaccepted part of the batch until it is admitted.
+Set an explicit outstanding URI limit in addition to the ready-window limit.
+If removed workers can still be running, reserve their fixed worker count in
+addition to the file-entry limit. On ErrLimit, retain an explicit failure or
+retry obligation and pause discovery. Never claim a dropped input was indexed.
 
 ## Discovery is a resumable cursor
 
@@ -123,6 +140,13 @@ Create a Scanner with the consumer's roots, `.yaml`/`.yml` extensions if desired
 explicit excluded directory basenames, and a directory capacity. Construction
 normalizes paths without opening or enumerating those roots. Call Next with a small work budget, process the returned
 Files, and give the scheduler another opportunity before the next batch.
+
+Keep a Membership beside each root and an Observation in each existing file
+record. Start a pass with the scanner. Mark both discovered files and accepted
+watcher/input events with Observe under the registry lock. Only after Finish
+accepts complete enumeration may ScanPass.Missing select closed-file deletion
+candidates. An event in an already scanned directory is thereby protected from
+that pass's sweep. Failed scans and superseded passes cannot justify deletion.
 
 The budget includes ordinary files and directory operations, not only matching
 YAML files. A large flat directory of unrelated files therefore yields regularly.
