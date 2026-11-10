@@ -27,8 +27,14 @@ func main() {
 		auditCases()
 	} else if stage == "resources" {
 		resourceCases()
-	} else {
+	} else if stage == "yaml" {
 		yamlCases()
+	} else if stage == "index" {
+		indexCases()
+	} else if stage == "workspace" {
+		workspaceCases()
+	} else {
+		check("known-stage", false)
 	}
 	json.NewEncoder(os.Stdout).Encode(results)
 	for _, ok := range results {

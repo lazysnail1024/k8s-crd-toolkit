@@ -24,7 +24,7 @@ try:
  with tempfile.TemporaryDirectory(prefix='toolkit-checkout-') as tmp:
   tmp=pathlib.Path(tmp);source=tmp/'source';source.mkdir()
   # Stage current candidate files into a temporary repository, never the user's index.
-  files=required(['git','ls-files','-z'],ROOT).decode().split('\0')
+  files=required(['git','ls-files','--cached','--others','--exclude-standard','-z'],ROOT).decode().split('\0')
   for name in filter(None,files+['.gitattributes','tests/checkout_e2e.py','tests/snapshot_e2e.py']):
    src=ROOT/name
    if src.is_file():
@@ -47,7 +47,7 @@ try:
     for name in manifest['files']:
      blob=required(['git','show','HEAD:'+name],source);packaged=z.read(manifest['module']+'@'+manifest['version']+'/'+name)
      row['files'].append({'path':name,'commitSHA256':hashlib.sha256(blob).hexdigest(),'checkoutSHA256':hashlib.sha256((checkout/name).read_bytes()).hexdigest(),'packagedSHA256':hashlib.sha256(packaged).hexdigest(),'matchesCommit':packaged==blob and (checkout/name).read_bytes()==blob})
-   row['consumerPassed']=r.returncode==0 and observed['passed'] is True and len(observed['stageResults'])==8
+   row['consumerPassed']=r.returncode==0 and observed['passed'] is True and set(observed['stageResults'])=={'source','edit','yaml','audit','budget','retention','resume','resources','index','workspace'}
    row['bytesMatchCommit']=bool(row['files']) and all(x['matchesCommit'] for x in row['files']);save()
   report['assertions']={'bothCheckoutsConsumed':all(r['consumerPassed'] for r in report['cases']),'allModuleBytesMatchCommit':all(r['bytesMatchCommit'] for r in report['cases']),'sameModuleIdentity':len({r['snapshot']['version'] for r in report['cases']})==1,'sameContractIdentity':len({r['snapshot']['contractSHA256'] for r in report['cases']})==1,'sameZIPIdentity':len({r['snapshot']['zipSHA256'] for r in report['cases']})==1}
   # An ordinary development run must consume valid, uncommitted source changes.
