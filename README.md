@@ -4,27 +4,27 @@ A Go module for immutable text, YAML structure, validated edits, incremental sym
 
 ## Usage
 
-Add the first Go module prerelease explicitly:
+Pin a reviewed source commit. Set `TOOLKIT_COMMIT` to its full Git SHA, then run:
 
 ```sh
-go get github.com/lazysnail1024/k8s-crd-toolkit@v0.0.1-alpha
+go get github.com/lazysnail1024/k8s-crd-toolkit@"$TOOLKIT_COMMIT"
 ```
 
-Keep the selected version in `go.mod` and the generated checksums in `go.sum`. Import the packages under `github.com/lazysnail1024/k8s-crd-toolkit`:
+Keep the resulting Go pseudo-version in `go.mod` and the generated checksums in `go.sum`. A tag or release is not required. Import the packages under `github.com/lazysnail1024/k8s-crd-toolkit`:
 
 - `source`: immutable snapshots, UTF-8 byte spans, UTF-16 positions, and sequential changes.
 - `yamlview`: fault-tolerant YAML parsing that preserves original spans, duplicate keys, and document boundaries.
 - `edit`: atomic replacements with revision, expected-text, and overlap validation.
-- `index`: per-file symbol/reference summaries, reverse dependencies (including missing targets), stale-result protection, and bounded symbol search.
-- `workspace`: authoritative open buffers, disk-read tickets, a bounded priority queue, and resumable directory discovery.
+- `index`: per-file symbol/reference summaries, reverse dependencies (including missing targets), stale-result protection, unchanged-summary reuse, and bounded symbol search.
+- `workspace`: authoritative open buffers and byte accounting, disk-read tickets, bounded work scheduling, and resumable directory discovery with safe scan reconciliation.
 
-See [the public API contract](CONTRACT.md) for signatures, limits, and error semantics, [the integration guide](docs/workspace-index.md) for lifecycle and scheduling examples, and [the release notes](CHANGELOG.md) for version details. Version `v0.0.1-alpha` implements contract `toolkit-design-2`, adding the two new packages without changing the three original package contracts. This is an alpha release: later prereleases may introduce documented incompatible changes. Consumers must explicitly update their contract snapshot and implementation lock; existing plugins do not acquire indexing automatically. For development before a future release, local integration can use an explicit content snapshot:
+See [the public API contract](CONTRACT.md) for signatures, limits, and error semantics, [the integration guide](docs/workspace-index.md) for lifecycle and scheduling examples, and [the change log](CHANGELOG.md) for scope. Contract `toolkit-design-3` adds shared lifecycle operations while preserving existing APIs. Consumers explicitly update their contract snapshot and implementation lock; existing plugins do not acquire indexing automatically. Local integration can also use an explicit content snapshot:
 
 ```sh
 python3 tools/snapshot.py --output ./artifacts/module-proxy
 ```
 
-The generated manifest identifies the local module version, contract, source files, and ZIP by digest; it marks the snapshot as unpublished. This local snapshot is separate from the published tag and its Go module checksums.
+The generated manifest identifies the local module version, contract, source files, and ZIP by digest; it marks the snapshot as unpublished. Production consumer locks use the reviewed source commit and its Go module checksums.
 
 ## Requirements and build
 

@@ -75,10 +75,30 @@ The new buildable counterexamples can be run independently of the existing parse
 
 ```sh
 python3 tests/ablate.py index-ticket index-missing index-position index-fresh index-retention
+python3 tests/ablate.py index-reuse
 python3 tests/ablate.py workspace-overlay workspace-ticket workspace-coalescing workspace-fairness
 python3 tests/ablate.py workspace-discard
 python3 tests/ablate.py workspace-priority workspace-complete workspace-filter
+python3 tests/ablate.py workspace-workqueue-fairness workspace-workqueue-followup workspace-membership-complete
 ```
+
+The lifecycle consumers also exercise the actual WorkQueue API with ready
+capacities one and two, preserving 8:4:1 service across overflow; a running
+notification followed by another update; removed/recreated inputs; foreign and
+replayed completions; bounded retired executions; coalesced worker wakeups; and
+four concurrent producers and four workers. Every URI's final accepted version
+must be processed without simultaneous execution for that URI. Membership cases
+cover watcher observations in already scanned directories, incomplete passes,
+superseded sweeps, and cross-instance tokens. OpenBytes checks accepted changes,
+refusals, and close accounting in the existing input lifecycle scenarios.
+
+Index reuse cases preserve hidden pending locations, new revisions, original
+reverse dependencies, same-scope ownership, and ticket rejection. Four reuses of
+a 20,000-symbol summary must allocate less than 1 MiB after setup, detecting a
+replacement that clones the retained summary on every reuse. The reuse mutation
+removes the scope check and must fail its independently specified scope-refusal
+assertion. The three work/membership mutations remove overflow fairness,
+completion-time follow-up retention, and complete-scan deletion protection.
 
 Each counterexample removes one relevant guard in an isolated runtime copy, compiles the same independent consumer, and must fail its designated behavior assertion. The expected failures cover stale commits, newly satisfied references, positional invalidation, stale navigation, retained source storage, authoritative overlays, disk read generations, ticket-scoped cancellation, URI coalescing/fairness, current-directory priority, honest completeness and candidate filtering. `workspace-coalescing` bypasses existing-URI membership and must fail `queue-coalesces-uri`; its source remains buildable. `workspace-discard` removes only the read-generation comparison from `DiscardRead`; its compiled consumer must fail `cancelled-old-read-keeps-new-ticket`. A crash, compilation failure, timeout or unrelated assertion does not count as detecting the counterexample.
 

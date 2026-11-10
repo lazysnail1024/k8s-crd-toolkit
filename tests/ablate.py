@@ -6,6 +6,7 @@ variants=[('source','source/snapshot.go','next <= s.revision','false','revision'
 variants.append(('retention','yamlview/internal/parser/parser.go','t = p.Parse(data, nil)','t = p.ParseWithOptions(func(i int, _ sitter.Point) []byte { if i >= len(data) { return nil }; return data[i:] }, nil, &sitter.ParseOptions{ProgressCallback: func(s sitter.ParseState) bool { return ctx.Err() != nil || yaml.Exceeded() }})','success-context-released'))
 variants.extend([
  ('index-ticket','index/index.go','e == nil || e.serial != ticket.serial','e == nil','stale-ticket-cannot-commit'),
+ ('index-reuse','index/index.go','if e.data == nil || e.data.scope != e.scope {\n\t\treturn Change{}, ErrNoPrevious','if e.data == nil {\n\t\treturn Change{}, ErrNoPrevious','reuse-rejects-different-scope'),
  ('index-missing','index/index.go','i.affected(&stored{scope: e.scope, facts: facts}, affected)','// New-definition dependency propagation deliberately removed.','new-target-wakes-missing-caller'),
  ('index-position','index/facts.go','s.Span, s.Selection = source.Span{}, source.Span{}','// Position normalization deliberately removed.','location-only-not-semantic'),
  ('index-fresh','index/query.go','if e.serial != 0 {','if false {','pending-definitions-not-published'),
@@ -15,6 +16,9 @@ variants.extend([
  ('workspace-discard','workspace/documents.go','if ticket.owner != d || !exists || entry.open != nil || ticket.read == 0 || entry.read != ticket.read {\n\t\treturn false','if ticket.owner != d || !exists || entry.open != nil || ticket.read == 0 {\n\t\treturn false','cancelled-old-read-keeps-new-ticket'),
  ('workspace-coalescing','workspace/queue.go','if element, exists := q.pending[job.URI]; exists {','if element, exists := q.pending[job.URI]; exists && false {','queue-coalesces-uri'),
  ('workspace-fairness','workspace/queue.go','var turns = [...]Priority{Current, Current, Current, Current, Current, Current, Current, Current, Related, Related, Related, Related, Background}','var turns = [...]Priority{Current, Related}','background-progress-under-continuous-edits'),
+ ('workspace-workqueue-fairness','workspace/workqueue.go','return q.ready[p].Len() != 0 || q.overflow[p].Len() != 0','return q.ready[p].Len() != 0','workqueue-small-ready-fairness-1'),
+ ('workspace-workqueue-followup','workspace/workqueue.go','if e.waiting {\n\t\tq.place(e, false, false)','if false {\n\t\tq.place(e, false, false)','workqueue-running-update-survives-completion'),
+ ('workspace-membership-complete','workspace/membership.go','!pass.state.active && pass.state.complete &&','!pass.state.active &&','membership-failed-pass-cannot-delete'),
  ('workspace-priority','workspace/scanner.go','if s.active != nil && !s.active.work.priority && s.urgent() {','if false {','current-directory-served-before-bulk'),
  ('workspace-complete','workspace/scanner.go','batch.Complete = batch.Done && !s.incomplete && !s.closed','batch.Complete = batch.Done && !s.closed','directory-limit-not-false-complete'),
  ('workspace-filter','workspace/scanner.go','if len(s.extensions) != 0 && !s.extensions[strings.ToLower(filepath.Ext(entry.Name()))] {','if false {','scanner-candidates-exact-once'),
