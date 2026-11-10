@@ -91,7 +91,7 @@ jobs:
           python tests/ablate.py
           index-ticket index-missing index-position index-fresh index-retention
           workspace-overlay workspace-ticket workspace-discard
-          workspace-generation workspace-fairness workspace-priority
+          workspace-coalescing workspace-fairness workspace-priority
           workspace-complete workspace-filter
       - name: Retain regression evidence
         if: always()

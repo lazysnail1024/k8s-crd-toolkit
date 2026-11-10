@@ -24,14 +24,13 @@ type entry struct {
 	uri      source.URI
 	scope    Scope
 	revision source.Revision
-	serial   uint64
-	fresh    bool
+	serial   uint64 // Nonzero while pending; zero after a successful commit.
 	data     *stored
 }
 type scopeState struct {
 	generation uint64
-	files      uriSet
-	pending    uriSet
+	files      map[source.URI]bool // Membership and whether this URI is pending.
+	pending    int                 // Number of true values; State remains O(1).
 }
 
 // Index supports concurrent calls. Construct it with New and do not copy it.
@@ -92,7 +91,7 @@ func (i *Index) Begin(uri source.URI, scope Scope, revision source.Revision) (Ti
 		i.detach(e.scope, e.uri)
 	}
 	e.scope = Scope(strings.Clone(string(scope)))
-	e.revision, e.serial, e.fresh = revision, i.generation, false
+	e.revision, e.serial = revision, i.generation
 	i.strings = bytes + len(scope)
 	i.attach(e.scope, e.uri, true)
 	if e.data != nil && e.data.scope != e.scope {
@@ -135,7 +134,7 @@ func (i *Index) Commit(ticket Ticket, facts Facts) (Change, error) {
 	}
 	i.forget(e)
 	e.data = &stored{scope: e.scope, facts: cloneFacts(facts), bytes: bytes}
-	e.fresh, e.serial = true, 0
+	e.serial = 0
 	i.symbols += len(facts.Symbols)
 	i.uses += useCount(facts)
 	i.strings += bytes
@@ -171,7 +170,7 @@ func (i *Index) ticketEntry(ticket Ticket) (*entry, error) {
 		return nil, ErrStaleTicket
 	}
 	e := i.files[ticket.uri]
-	if e == nil || e.fresh || e.serial != ticket.serial {
+	if e == nil || e.serial != ticket.serial {
 		return nil, ErrStaleTicket
 	}
 	return e, nil
@@ -188,15 +187,17 @@ func (i *Index) advance() error {
 func (i *Index) attach(scope Scope, uri source.URI, pending bool) {
 	s := i.scopes[scope]
 	if s == nil {
-		s = &scopeState{files: uriSet{}, pending: uriSet{}}
+		s = &scopeState{files: map[source.URI]bool{}}
 		i.scopes[scope] = s
 	}
-	s.files[uri] = struct{}{}
-	if pending {
-		s.pending[uri] = struct{}{}
-	} else {
-		delete(s.pending, uri)
+	if s.files[uri] != pending {
+		if pending {
+			s.pending++
+		} else {
+			s.pending--
+		}
 	}
+	s.files[uri] = pending
 	s.generation = i.generation
 }
 
@@ -205,8 +206,10 @@ func (i *Index) detach(scope Scope, uri source.URI) {
 	if s == nil {
 		return
 	}
+	if s.files[uri] {
+		s.pending--
+	}
 	delete(s.files, uri)
-	delete(s.pending, uri)
 	s.generation = i.generation
 	if len(s.files) == 0 {
 		delete(i.scopes, scope)

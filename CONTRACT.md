@@ -212,7 +212,7 @@ func (d *Documents) Close(uri source.URI) bool
 
 type Priority uint8
 const ( Current Priority = iota; Related; Background )
-type Job struct { URI source.URI; Generation uint64; Priority Priority }
+type Job struct { URI source.URI; Priority Priority }
 type Queue struct { /* private */ }
 func NewQueue(capacity int) (*Queue, error)
 func (q *Queue) Put(job Job) error
@@ -251,9 +251,9 @@ func (s *Scanner) Close() error
 
 ### Queue behavior
 
-- Queue capacity must be positive. Job.Generation is a caller-assigned monotonic input generation, not an editor version or a globally interpreted timestamp. For a pending URI, Put keeps the newest generation and highest requested priority; older generations return ErrStale. Equal generations can raise priority. Existing jobs can be updated at capacity; new URIs return ErrLimit when full.
+- Queue capacity must be positive. A Job is a notification that a URI needs work; it carries no input snapshot, ticket, or version. Put coalesces pending notifications for the same URI and preserves the highest requested priority. An existing URI can be coalesced or promoted at capacity; new URIs return ErrLimit when full.
 - Pop follows an 8:4:1 weighted round robin for Current, Related, and Background, skipping empty lanes, with FIFO order within each lane. Under continuous load in all lanes, a background job receives a turn within 13 successful pops. The policy guarantees service opportunities, not elapsed-time latency.
-- Pop removes pending membership immediately. A newer event for a running file can therefore enqueue another job; there is no permanent URI deduplication. The queue does not track completed work or cancel workers. Consumers validate input/ticket freshness, bound worker concurrency, and preserve events when applying backpressure. A priority queue cannot preempt a blocking syscall; foreground responsiveness also needs an available foreground execution slot.
+- Pop removes pending membership immediately. An event for a running file can therefore enqueue another notification; there is no permanent URI deduplication. The consumer selects that URI's latest accepted snapshot and original index ticket when dispatching work. A notification with no accepted input can be ignored. Input freshness is enforced by Documents and Index tickets, not by queue order. The queue does not track completed work or cancel workers. Consumers bound worker concurrency and preserve events when applying backpressure. A priority queue cannot preempt a blocking syscall; foreground responsiveness also needs an available foreground execution slot.
 
 ### Discovery behavior
 

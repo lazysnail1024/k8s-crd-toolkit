@@ -18,6 +18,8 @@ func indexCases() {
 	indexTicketCases()
 	indexDependencyCases()
 	indexIdentityCases()
+	indexSymbolOrderCases()
+	indexSymbolAllocationCase()
 	indexScopeMoveCases()
 	indexCopyCases()
 	indexInputCases()
@@ -212,6 +214,87 @@ func indexIdentityCases() {
 	check("workspace-symbol-explicit-truncation", err == nil && len(search.Items) == 1 && search.Truncated && search.Items[0].URI == "file:///another.yaml")
 	_, err = i.Symbols("scope-a", "", 0)
 	check("workspace-symbol-zero-limit-rejected", err != nil)
+}
+
+func indexSymbolOrderCases() {
+	i := generousIndex("symbol-order")
+	if i == nil {
+		return
+	}
+	symbol := func(id string, start, end int) index.Symbol {
+		return index.Symbol{ID: index.SymbolID(id), Key: "shared-key", Name: "match-" + id, Kind: "resource", Span: source.Span{Start: start, End: end}, Selection: source.Span{Start: start, End: end}}
+	}
+	fixtures := []struct {
+		uri     source.URI
+		scope   index.Scope
+		symbols []index.Symbol
+	}{
+		{"file:///b.yaml", "search", []index.Symbol{symbol("z", 5, 8), symbol("b", 1, 4), symbol("a", 1, 4), symbol("early", 0, 8), symbol("short", 1, 3)}},
+		{"file:///c.yaml", "search", []index.Symbol{symbol("only", 0, 3)}},
+		{"file:///a.yaml", "search", []index.Symbol{symbol("late", 8, 9), symbol("early", 1, 3)}},
+		{"file:///0-pending.yaml", "search", []index.Symbol{symbol("hidden", 0, 3)}},
+		{"file:///0-foreign.yaml", "elsewhere", []index.Symbol{symbol("hidden", 0, 3)}},
+	}
+	valid := true
+	for _, fixture := range fixtures {
+		_, err := commitIndexFile(i, fixture.uri, fixture.scope, 1, index.Facts{Symbols: fixture.symbols})
+		valid = valid && err == nil
+	}
+	_, err := i.Begin("file:///0-pending.yaml", "search", 2)
+	check("symbol-order-fixture", valid && err == nil)
+	// This expected order is literal: URI first, then both span coordinates,
+	// then ID. Pending locations and another scope must not occupy a slot.
+	want := []string{"file:///a.yaml#early", "file:///a.yaml#late", "file:///b.yaml#early", "file:///b.yaml#short", "file:///b.yaml#a", "file:///b.yaml#b", "file:///b.yaml#z", "file:///c.yaml#only"}
+	for _, limit := range []int{1, 2, 3, 5, 8, 9} {
+		valid := true
+		for repeat := 0; repeat < 16; repeat++ {
+			result, err := i.Symbols("search", "match-", limit)
+			valid = valid && err == nil && len(result.Items) == min(limit, len(want)) && result.Truncated == (len(want) > limit) && result.State.Pending == 1
+			for n, item := range result.Items {
+				valid = valid && n < len(want) && string(item.URI)+"#"+string(item.Symbol.ID) == want[n]
+			}
+		}
+		check(fmt.Sprintf("workspace-symbol-stable-top-%d", limit), valid)
+	}
+	result, err := i.Symbols("search", "MATCH-", 5)
+	check("workspace-symbol-no-match-not-truncated", err == nil && len(result.Items) == 0 && !result.Truncated)
+}
+
+func indexSymbolAllocationCase() {
+	const files, perFile, limit, queries = 20, 1000, 10, 4
+	const allocationLimit = 1024 * 1024
+	i := consumerIndex("symbol-query-allocation", index.Limits{Files: files, Symbols: files * perFile, References: 1, Bytes: 8 * 1024 * 1024})
+	if i == nil {
+		return
+	}
+	valid := true
+	for file := 0; file < files; file++ {
+		symbols := make([]index.Symbol, perFile)
+		for n := range symbols {
+			symbols[n] = index.Symbol{ID: index.SymbolID(fmt.Sprintf("symbol-%04d", n)), Key: "shared-key", Name: "match", Kind: "resource", Span: source.Span{Start: n * 2, End: n*2 + 1}, Selection: source.Span{Start: n * 2, End: n*2 + 1}}
+		}
+		_, err := commitIndexFile(i, source.URI(fmt.Sprintf("file:///query-%02d.yaml", file)), "query", 1, index.Facts{Symbols: symbols})
+		valid = valid && err == nil
+	}
+	check("symbol-query-large-input", valid)
+	_, err := i.Symbols("query", "match", limit)
+	check("symbol-query-warmup", err == nil)
+	runtime.GC()
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for n := 0; n < queries; n++ {
+		result, err := i.Symbols("query", "match", limit)
+		valid = valid && err == nil && len(result.Items) == limit && result.Truncated
+		runtime.KeepAlive(result)
+	}
+	runtime.ReadMemStats(&after)
+	runtime.KeepAlive(i)
+	allocated := after.TotalAlloc - before.TotalAlloc
+	check("symbol-query-large-input-correct", valid)
+	// The generous bound catches collecting all 20,000 matches before slicing
+	// to ten. It does not impose a query latency or process RSS requirement.
+	check("symbol-query-temporary-allocation-bounded", allocated < allocationLimit)
+	check("symbol-query-allocation-evidence-written", json.NewEncoder(os.Stderr).Encode(map[string]any{"symbolQuery": map[string]any{"symbols": files * perFile, "limit": limit, "queries": queries, "totalAllocBytes": allocated, "allocationLimit": allocationLimit}}) == nil)
 }
 
 func indexScopeMoveCases() {

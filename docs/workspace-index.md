@@ -35,7 +35,8 @@ are each thread-safe; operations spanning the two are not a single transaction.
 1. On an editor open/change, update Documents and obtain the authoritative
    Snapshot. Reject an out-of-order editor version in the protocol adapter before
    calling Change. Call Index.Begin with that snapshot's URI/revision and the
-   consumer's scope, then enqueue the accepted work at Current priority.
+   consumer's scope. Retain the accepted snapshot and original ticket together,
+   then enqueue its URI at Current priority.
 2. A disk worker obtains a read ticket before I/O. ErrOverlay means disk is not
    authoritative; retrieve the open snapshot instead. Bound the actual read, not
    only the size checked on publication. On I/O failure or cancellation, release
@@ -43,13 +44,22 @@ are each thread-safe; operations spanning the two are not a single transaction.
    disk events and could otherwise revoke a newer read started by another worker.
 3. Return the read result to the coordinator. PublishRead rejects a result made
    obsolete by open/change/close, a newer read, or invalidation. For an accepted
-   snapshot, call Index.Begin before scheduling its analysis.
+   snapshot, call Index.Begin and retain the snapshot and ticket before scheduling
+   its URI for analysis. PublishRead does not retain closed-file content.
 4. Analysis runs outside the coordinator and index lock, using only its immutable
    snapshot, version/configuration selection, and original index ticket. It
    produces detached Facts and calls Commit. Never obtain a replacement ticket
-   after finishing analysis of old content.
+   after finishing analysis of old content. After a successful commit, release
+   the accepted input only if it is still the same work item; completion of an
+   older worker must not discard a newer accepted input.
 5. Schedule Change.Affected for domain recomputation. References to missing
    targets must already be registered, so a target created later can wake them.
+
+For an affected file whose accepted input has been released, obtain its open
+snapshot or perform a fresh bounded disk read, accept the input, and call Begin
+before enqueueing analysis. Missing temporary input does not prove that a file
+was deleted. An authoritative discovery, watcher, or recomputation request can
+create new accepted work; an old analysis notification cannot do so by itself.
 
 File A changing does not revoke file B's ticket. A configuration change can call
 Begin again with the same source revision; its new ticket supersedes earlier
@@ -84,9 +94,18 @@ and protocol responsibilities.
 ## Keep foreground work available
 
 The Queue offers Current, Related, and Background service in an 8:4:1 weighted
-cycle. Repeated pending events for one URI keep the newest generation and highest
-priority. Taking a job releases its pending slot immediately, so an update that
-arrives while old work runs is not lost.
+cycle. It stores URI notifications and coalesces pending notifications at the
+highest requested priority. Taking a job releases its pending slot immediately,
+so an update that arrives while old work runs is not lost.
+
+When dispatching a URI, obtain its latest accepted snapshot and original index
+ticket from the coordinator. The coordinator already needs this input: Queue
+never owns snapshots, and Documents retains only open buffers. A late notification
+therefore selects current work or, if there is no accepted input, is ignored.
+Deleting a file also discards its accepted work and calls Index.Remove; a later
+notification alone cannot restore it. Queue does not assign another generation
+or decide whether a worker's result is current. Documents and Index tickets
+protect the separate read and analysis publication stages.
 
 The queue does not interrupt work already running. Keep a foreground execution
 opportunity available, bound background concurrency, and cancel superseded work
@@ -187,8 +206,11 @@ exercise unresolved references, candidate ambiguity, deletion, input/output
 signature changes, actual source positions, and concurrent fact replacement.
 Workspace tests use real directories, ordinary-file-heavy discovery, priority
 interleaving, cancellation/resume, open buffers, stale reads, and capacity errors.
-Buildable ablations verify that removing key guards causes the designated
-behavioral assertion to fail.
+Buildable guard mutations verify that removing key protections causes the
+designated behavioral assertion to fail. Separate
+[design ablations](design-ablation.md) compare simpler working implementations
+against the same requirements, including bounded query allocation and related
+directory responsiveness.
 
 See [tests/README.md](../tests/README.md) for commands and retained evidence. These
 tests establish the mechanisms and packaging on the tested platform. They do not

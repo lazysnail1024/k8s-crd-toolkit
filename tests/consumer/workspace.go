@@ -25,9 +25,11 @@ func workspaceCases() {
 	documentLimitCases()
 	queueCases()
 	queueFairnessCases()
+	queueCoordinationCases()
 	scannerCases()
 	scannerFailureCases()
 	scannerInteractionCases()
+	scannerLifecycleCases()
 	workspaceEvidence["platform"] = runtime.GOOS + "/" + runtime.GOARCH
 	check("workspace-evidence-written", json.NewEncoder(os.Stderr).Encode(workspaceEvidence) == nil)
 }
@@ -222,26 +224,26 @@ func queueCases() {
 	if err != nil {
 		return
 	}
-	err = queue.Put(workspace.Job{URI: "file:///current", Generation: 1, Priority: workspace.Background})
+	err = queue.Put(workspace.Job{URI: "file:///current", Priority: workspace.Background})
 	check("queue-background-added", err == nil)
-	err = queue.Put(workspace.Job{URI: "file:///other", Generation: 1, Priority: workspace.Related})
+	err = queue.Put(workspace.Job{URI: "file:///other", Priority: workspace.Related})
 	check("queue-related-added", err == nil)
-	err = queue.Put(workspace.Job{URI: "file:///current", Generation: 1, Priority: workspace.Current})
+	err = queue.Put(workspace.Job{URI: "file:///current", Priority: workspace.Current})
 	check("queue-promotion-at-capacity", err == nil && queue.Len() == 2)
-	err = queue.Put(workspace.Job{URI: "file:///current", Generation: 2, Priority: workspace.Background})
-	check("queue-coalesces-new-generation", err == nil && queue.Len() == 2)
-	err = queue.Put(workspace.Job{URI: "file:///current", Generation: 1, Priority: workspace.Current})
-	check("queue-rejects-old-generation", errors.Is(err, workspace.ErrStale))
-	err = queue.Put(workspace.Job{URI: "file:///overflow", Generation: 1, Priority: workspace.Background})
+	err = queue.Put(workspace.Job{URI: "file:///current", Priority: workspace.Background})
+	check("queue-coalesces-uri", err == nil && queue.Len() == 2)
+	err = queue.Put(workspace.Job{URI: "file:///current", Priority: workspace.Current})
+	check("queue-repeated-notification-is-idempotent", err == nil && queue.Len() == 2)
+	err = queue.Put(workspace.Job{URI: "file:///overflow", Priority: workspace.Background})
 	check("queue-full-explicit", errors.Is(err, workspace.ErrLimit) && queue.Len() == 2)
 	job, found := queue.Pop()
-	check("queue-current-priority-preserved", found && job.URI == "file:///current" && job.Generation == 2 && job.Priority == workspace.Current)
+	check("queue-current-priority-preserved", found && job.URI == "file:///current" && job.Priority == workspace.Current)
 	queue.Remove("file:///other")
 	_, found = queue.Pop()
 	check("queue-remove-clears-pending", !found && queue.Len() == 0)
-	err = queue.Put(workspace.Job{URI: "", Generation: 1, Priority: workspace.Current})
+	err = queue.Put(workspace.Job{URI: "", Priority: workspace.Current})
 	check("queue-rejects-empty-uri", err != nil)
-	err = queue.Put(workspace.Job{URI: "file:///invalid", Generation: 1, Priority: workspace.Priority(3)})
+	err = queue.Put(workspace.Job{URI: "file:///invalid", Priority: workspace.Priority(3)})
 	check("queue-rejects-invalid-priority", err != nil)
 }
 
@@ -252,9 +254,9 @@ func queueFairnessCases() {
 		return
 	}
 	jobs := []workspace.Job{
-		{URI: "file:///current", Generation: 1, Priority: workspace.Current},
-		{URI: "file:///related", Generation: 1, Priority: workspace.Related},
-		{URI: "file:///background", Generation: 1, Priority: workspace.Background},
+		{URI: "file:///current", Priority: workspace.Current},
+		{URI: "file:///related", Priority: workspace.Related},
+		{URI: "file:///background", Priority: workspace.Background},
 	}
 	for _, job := range jobs {
 		check("fair-queue-input-"+string(job.URI), queue.Put(job) == nil)
@@ -268,7 +270,6 @@ func queueFairnessCases() {
 			break
 		}
 		counts[job.Priority]++
-		job.Generation++
 		valid = queue.Put(job) == nil && valid
 	}
 	check("background-progress-under-continuous-edits", valid && counts[workspace.Background] >= 2)
@@ -517,16 +518,22 @@ func scannerInteractionCases() {
 	defer scanner.Close()
 	var prefixFiles []string
 	prefixVisited := 0
-	for n := 0; n < 32 && len(prefixFiles) == 0; n++ {
-		batch, nextErr := scanner.Next(context.Background(), 1)
+	prefixMaxBatch := 0
+	for n := 0; n < 32 && (prefixVisited < 512 || len(prefixFiles) == 0); n++ {
+		batch, nextErr := scanner.Next(context.Background(), 64)
 		if nextErr != nil || batch.Done {
 			check("background-scan-started", false)
 			return
 		}
 		prefixFiles = append(prefixFiles, batch.Files...)
 		prefixVisited += batch.Visited
+		prefixMaxBatch = max(prefixMaxBatch, batch.Visited)
 	}
-	check("background-scan-started", len(prefixFiles) == 1 && strings.HasPrefix(prefixFiles[0], filepath.Join(root, "bulk")+string(filepath.Separator)))
+	prefixInBulk := true
+	for _, file := range prefixFiles {
+		prefixInBulk = prefixInBulk && strings.HasPrefix(file, filepath.Join(root, "bulk")+string(filepath.Separator))
+	}
+	check("background-scan-started", prefixVisited >= 512 && len(prefixFiles) > 0 && prefixInBulk)
 	check("priority-fixture-created", writeFixture(root, "active/current.yaml", "name: disk\n") == nil)
 	cancelled, cancel := context.WithCancel(context.Background())
 	cancel()
@@ -546,8 +553,8 @@ func scannerInteractionCases() {
 	currentURI := source.URI("file:current-document")
 	_, err = documents.Open(currentURI, "name: unsaved\n")
 	check("interaction-overlay-created", err == nil)
-	check("interaction-background-queued", queue.Put(workspace.Job{URI: "file:background", Generation: 1, Priority: workspace.Background}) == nil)
-	check("interaction-current-queued", queue.Put(workspace.Job{URI: currentURI, Generation: 1, Priority: workspace.Current}) == nil)
+	check("interaction-background-queued", queue.Put(workspace.Job{URI: "file:background", Priority: workspace.Background}) == nil)
+	check("interaction-current-queued", queue.Put(workspace.Job{URI: currentURI, Priority: workspace.Current}) == nil)
 	job, found := queue.Pop()
 	reads := 0
 	text, err := readForConsumer(context.Background(), documents, currentURI, filepath.Join(root, "not-present.yaml"), 4096, &reads)
@@ -567,8 +574,87 @@ func scannerInteractionCases() {
 		onlyCandidates = onlyCandidates && filepath.Ext(file) == ".yaml" && !seen[file]
 		seen[file] = true
 	}
+	totalVisited := prefixVisited + first.Visited + remaining.visited
 	check("large-scan-progress-preserved", remaining.err == nil && remaining.done && remaining.complete && len(allFiles) == 801 && onlyCandidates)
-	check("ordinary-files-never-become-parse-jobs", remaining.visited >= 1600 && len(allFiles) == 801)
-	check("large-scan-work-stays-bounded", first.Visited <= 2 && remaining.maxBatch <= 8)
-	workspaceEvidence["largeScan"] = map[string]any{"candidates": len(allFiles), "ordinaryFiles": 800, "visited": prefixVisited + first.Visited + remaining.visited, "maxBatchVisited": remaining.maxBatch, "diskReads": reads}
+	check("ordinary-files-never-become-parse-jobs", totalVisited >= 1600 && len(allFiles) == 801)
+	check("large-scan-work-stays-bounded", prefixMaxBatch <= 64 && first.Visited <= 2 && remaining.maxBatch <= 8)
+	// About 1,608 units cover all entries and directory overhead. The margin
+	// allows discovery of the new directory but excludes replaying the prefix.
+	check("large-scan-does-not-restart-processed-prefix", totalVisited <= 1800)
+	workspaceEvidence["largeScan"] = map[string]any{"candidates": len(allFiles), "ordinaryFiles": 800, "visited": totalVisited, "maxVisited": 1800, "prefixVisited": prefixVisited, "maxBatchVisited": remaining.maxBatch, "diskReads": reads}
+}
+
+type cancelAfterChecks struct {
+	context.Context
+	cancel    context.CancelFunc
+	remaining int
+}
+
+func (c *cancelAfterChecks) Err() error {
+	c.remaining--
+	if c.remaining == 0 {
+		c.cancel()
+	}
+	return c.Context.Err()
+}
+
+func scannerLifecycleCases() {
+	root := fixtureDirectory("scanner-lifecycle")
+	if root == "" {
+		return
+	}
+	defer os.RemoveAll(root)
+	valid := true
+	for n := 0; n < 1200; n++ {
+		valid = writeFixture(root, fmt.Sprintf("noise-%04d.txt", n), "noise") == nil && valid
+	}
+	valid = writeFixture(root, "current/target.yaml", "kind: Resource\n") == nil && valid
+	related := filepath.Join(root, "current")
+	target := filepath.Join(related, "target.yaml")
+	want := []string{target}
+	for n := 0; n < 3; n++ {
+		path := fmt.Sprintf("background-%d/value.yaml", n)
+		valid = writeFixture(root, path, "kind: Resource\n") == nil && valid
+		want = append(want, filepath.Join(root, filepath.FromSlash(path)))
+	}
+	check("scanner-lifecycle-fixtures", valid)
+	scanner, err := workspace.NewScanner([]string{root, related}, workspace.ScanOptions{Extensions: []string{".yaml"}, MaxDirectories: 32})
+	check("scanner-lifecycle-created", err == nil)
+	if err != nil {
+		return
+	}
+	defer scanner.Close()
+	initial, err := scanner.Next(context.Background(), 1)
+	check("scanner-background-cursor-started-within-budget", err == nil && initial.Visited == 1 && !initial.Done)
+	priorityErr := scanner.Prioritize(related)
+	urgent, err := scanner.Next(context.Background(), 4)
+	check("scanner-related-directory-within-four-units", priorityErr == nil && err == nil && len(urgent.Files) == 1 && urgent.Files[0] == target)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	partial, err := scanner.Next(&cancelAfterChecks{Context: ctx, cancel: cancel, remaining: 11}, 100)
+	check("scanner-mid-scan-cancellation-explicit", errors.Is(err, context.Canceled) && partial.Visited > 0 && !partial.Complete)
+	remaining := drainScanner(scanner, 31)
+	files := append(append(append(initial.Files, urgent.Files...), partial.Files...), remaining.files...)
+	sort.Strings(files)
+	sort.Strings(want)
+	check("scanner-overlapping-roots-resume-exactly", remaining.err == nil && remaining.done && remaining.complete && remaining.issues == 0 && len(initial.Issues)+len(urgent.Issues)+len(partial.Issues) == 0 && reflect.DeepEqual(files, want))
+	check("scanner-non-yaml-work-remains-bounded", remaining.maxBatch <= 31)
+	writeErr := writeFixture(root, "after-completion.yaml", "late: yes\n")
+	priorityErr = scanner.Prioritize(root)
+	again, err := scanner.Next(context.Background(), 10)
+	check("scanner-completed-directory-not-requeued", writeErr == nil && priorityErr == nil && err == nil && again.Done && again.Complete && len(again.Files) == 0)
+
+	missing := filepath.Join(root, "initially-missing")
+	failed, err := workspace.NewScanner([]string{missing}, workspace.ScanOptions{MaxDirectories: 4})
+	check("scanner-lifecycle-missing-created", err == nil)
+	if err != nil {
+		return
+	}
+	defer failed.Close()
+	bad, err := failed.Next(context.Background(), 10)
+	check("scanner-failed-directory-explicitly-incomplete", err == nil && bad.Done && !bad.Complete && len(bad.Issues) == 1)
+	writeErr = writeFixture(missing, "new.yaml", "late: yes\n")
+	priorityErr = failed.Prioritize(missing)
+	repaired, err := failed.Next(context.Background(), 10)
+	check("scanner-failed-directory-not-requeued-in-pass", writeErr == nil && priorityErr == nil && err == nil && repaired.Done && !repaired.Complete && len(repaired.Files) == 0)
 }

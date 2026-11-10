@@ -16,15 +16,14 @@ const (
 	Background
 )
 
-// Job.Generation is a caller-assigned monotonic input generation, not an LSP
-// version. A worker must still validate its input and index ticket on completion.
+// Job requests work for a URI. The consumer selects its latest accepted input
+// when taking the job and validates the original index ticket on completion.
 type Job struct {
-	URI        source.URI
-	Generation uint64
-	Priority   Priority
+	URI      source.URI
+	Priority Priority
 }
 
-// Queue bounds pending work, coalescing each URI to its newest generation.
+// Queue bounds pending work, coalescing notifications for each URI.
 // It owns neither goroutines nor running jobs and is safe for concurrent use.
 type Queue struct {
 	mu       sync.Mutex
@@ -43,8 +42,8 @@ func NewQueue(capacity int) (*Queue, error) {
 	return &Queue{capacity: capacity, pending: make(map[source.URI]*list.Element)}, nil
 }
 
-// Put preserves the highest requested priority and rejects older generations.
-// Existing jobs can be updated at capacity. ErrLimit must cause backpressure or
+// Put preserves the highest requested priority for each pending URI.
+// Existing jobs can be promoted at capacity. ErrLimit must cause backpressure or
 // retry in the caller; it is not permission to discard a filesystem event.
 func (q *Queue) Put(job Job) error {
 	if job.URI == "" || job.Priority > Background {
@@ -54,14 +53,7 @@ func (q *Queue) Put(job Job) error {
 	defer q.mu.Unlock()
 	if element, exists := q.pending[job.URI]; exists {
 		previous := element.Value.(Job)
-		if job.Generation < previous.Generation {
-			return ErrStale
-		}
-		if job.Priority > previous.Priority {
-			job.Priority = previous.Priority
-		}
-		if job.Priority == previous.Priority {
-			element.Value = job
+		if job.Priority >= previous.Priority {
 			return nil
 		}
 		q.lanes[previous.Priority].Remove(element)

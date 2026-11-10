@@ -1,6 +1,7 @@
 package index
 
 import (
+	"container/heap"
 	"fmt"
 	"sort"
 	"strings"
@@ -10,7 +11,7 @@ import (
 
 func (i *Index) state(scope Scope) State {
 	if s := i.scopes[scope]; s != nil {
-		return State{s.generation, len(s.pending)}
+		return State{s.generation, s.pending}
 	}
 	return State{Generation: i.generation}
 }
@@ -24,8 +25,8 @@ func (i *Index) GetFile(uri source.URI) (File, bool, State) {
 	if e == nil {
 		return File{}, false, State{Generation: i.generation}
 	}
-	result := File{URI: e.uri, Scope: e.scope, Revision: e.revision, Fresh: e.fresh}
-	if e.fresh {
+	result := File{URI: e.uri, Scope: e.scope, Revision: e.revision, Fresh: e.serial == 0}
+	if e.serial == 0 {
 		result.Facts = copyFacts(e.data.facts)
 	}
 	return result, true, i.state(e.scope)
@@ -45,7 +46,7 @@ func (i *Index) Definitions(scope Scope, key Key) ([]Definition, State) {
 	result := []Definition{}
 	for uri := range i.definitions[lookup{scope, key}] {
 		e := i.files[uri]
-		if !e.fresh {
+		if e.serial != 0 {
 			continue
 		}
 		for _, s := range e.data.facts.Symbols {
@@ -66,7 +67,7 @@ func (i *Index) References(scope Scope, key Key) ([]Use, State) {
 	result := []Use{}
 	for uri := range i.dependencies[lookup{scope, key}] {
 		e := i.files[uri]
-		if !e.fresh {
+		if e.serial != 0 {
 			continue
 		}
 		for _, r := range e.data.facts.References {
@@ -111,17 +112,18 @@ func (i *Index) Symbols(scope Scope, query string, limit int) (SymbolResult, err
 	if s == nil {
 		return result, nil
 	}
+	candidates := &symbolHeap{&result}
 	for uri := range s.files {
 		e := i.files[uri]
-		if e.fresh {
-			i.appendSymbols(&result, e, query, limit)
+		if e.serial == 0 {
+			i.appendSymbols(candidates, e, query, limit)
 		}
 	}
 	sortDefinitions(result.Items)
 	return result, nil
 }
 
-func (i *Index) appendSymbols(result *SymbolResult, e *entry, query string, limit int) {
+func (i *Index) appendSymbols(result *symbolHeap, e *entry, query string, limit int) {
 	for _, s := range e.data.facts.Symbols {
 		if !strings.Contains(s.Name, query) {
 			continue
@@ -130,38 +132,32 @@ func (i *Index) appendSymbols(result *SymbolResult, e *entry, query string, limi
 	}
 }
 
-// Keep a max heap so map iteration order cannot change a truncated response.
-func keepSymbol(result *SymbolResult, item Definition, limit int) {
-	if len(result.Items) < limit {
+// The standard heap maintains the largest retained definition at the root.
+type symbolHeap struct{ *SymbolResult }
+
+func (h *symbolHeap) Len() int           { return len(h.Items) }
+func (h *symbolHeap) Less(a, b int) bool { return definitionLess(h.Items[b], h.Items[a]) }
+func (h *symbolHeap) Swap(a, b int)      { h.Items[a], h.Items[b] = h.Items[b], h.Items[a] }
+func (h *symbolHeap) Push(value any)     { h.Items = append(h.Items, value.(Definition)) }
+func (h *symbolHeap) Pop() any {
+	end := len(h.Items) - 1
+	value := h.Items[end]
+	h.Items[end] = Definition{}
+	h.Items = h.Items[:end]
+	return value
+}
+func keepSymbol(result *symbolHeap, item Definition, limit int) {
+	if result.Len() < limit {
 		result.Items = append(result.Items, item)
-		for child := len(result.Items) - 1; child > 0; {
-			parent := (child - 1) / 2
-			if !definitionLess(result.Items[parent], result.Items[child]) {
-				break
-			}
-			result.Items[parent], result.Items[child] = result.Items[child], result.Items[parent]
-			child = parent
-		}
 		return
 	}
-	result.Truncated = true
-	if !definitionLess(item, result.Items[0]) {
-		return
+	if !result.Truncated {
+		result.Truncated = true
+		heap.Init(result)
 	}
-	result.Items[0] = item
-	for parent := 0; ; {
-		child := parent*2 + 1
-		if child >= len(result.Items) {
-			return
-		}
-		if right := child + 1; right < len(result.Items) && definitionLess(result.Items[child], result.Items[right]) {
-			child = right
-		}
-		if !definitionLess(result.Items[parent], result.Items[child]) {
-			return
-		}
-		result.Items[parent], result.Items[child] = result.Items[child], result.Items[parent]
-		parent = child
+	if definitionLess(item, result.Items[0]) {
+		result.Items[0] = item
+		heap.Fix(result, 0)
 	}
 }
 

@@ -36,7 +36,6 @@ type Batch struct {
 type directoryWork struct {
 	path     string
 	priority bool
-	done     bool
 	element  *list.Element
 }
 
@@ -110,7 +109,7 @@ func absoluteDirectory(path string) (string, error) {
 
 func (s *Scanner) enqueue(path string, priority bool) error {
 	if existing := s.seen[path]; existing != nil {
-		if priority && !existing.done {
+		if priority {
 			existing.priority = true
 			if existing.element != nil {
 				s.pending.MoveToFront(existing.element)
@@ -260,7 +259,6 @@ func (s *Scanner) activate(ctx context.Context, batch *Batch) error {
 	s.pending.Remove(element)
 	work.element = nil
 	if err != nil {
-		work.done = true
 		s.issue(batch, work.path, err)
 		return nil
 	}
@@ -328,7 +326,6 @@ func (s *Scanner) finish(batch *Batch) {
 	if err := cursor.file.Close(); err != nil {
 		s.issue(batch, cursor.work.path, err)
 	}
-	cursor.work.done = true
 	s.active = nil
 }
 
