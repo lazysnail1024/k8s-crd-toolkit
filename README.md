@@ -4,7 +4,13 @@ A Go module for immutable text, YAML structure, validated edits, incremental sym
 
 ## Usage
 
-Import the packages under `github.com/lazysnail1024/k8s-crd-toolkit`:
+Add the first Go module prerelease explicitly:
+
+```sh
+go get github.com/lazysnail1024/k8s-crd-toolkit@v0.0.1-alpha
+```
+
+Keep the selected version in `go.mod` and the generated checksums in `go.sum`. Import the packages under `github.com/lazysnail1024/k8s-crd-toolkit`:
 
 - `source`: immutable snapshots, UTF-8 byte spans, UTF-16 positions, and sequential changes.
 - `yamlview`: fault-tolerant YAML parsing that preserves original spans, duplicate keys, and document boundaries.
@@ -12,17 +18,17 @@ Import the packages under `github.com/lazysnail1024/k8s-crd-toolkit`:
 - `index`: per-file symbol/reference summaries, reverse dependencies (including missing targets), stale-result protection, and bounded symbol search.
 - `workspace`: authoritative open buffers, disk-read tickets, a bounded priority queue, and resumable directory discovery.
 
-See [the public API contract](CONTRACT.md) for signatures, limits, and error semantics, and [the integration guide](docs/workspace-index.md) for lifecycle and scheduling examples. Contract `toolkit-design-2` adds the two new packages without changing the three original package contracts. No formal version or tag has been released. Consumers must explicitly update their contract snapshot and implementation lock; existing plugins do not acquire indexing automatically. Local integration can use an explicit content snapshot:
+See [the public API contract](CONTRACT.md) for signatures, limits, and error semantics, [the integration guide](docs/workspace-index.md) for lifecycle and scheduling examples, and [the release notes](CHANGELOG.md) for version details. Version `v0.0.1-alpha` implements contract `toolkit-design-2`, adding the two new packages without changing the three original package contracts. This is an alpha release: later prereleases may introduce documented incompatible changes. Consumers must explicitly update their contract snapshot and implementation lock; existing plugins do not acquire indexing automatically. For development before a future release, local integration can use an explicit content snapshot:
 
 ```sh
 python3 tools/snapshot.py --output ./artifacts/module-proxy
 ```
 
-The generated manifest identifies the module version, contract, source files, and ZIP by digest; it marks the snapshot as unpublished.
+The generated manifest identifies the local module version, contract, source files, and ZIP by digest; it marks the snapshot as unpublished. This local snapshot is separate from the published tag and its Go module checksums.
 
 ## Requirements and build
 
-Use Go 1.27.3, a native C compiler, and `CGO_ENABLED=1`. Python 3 is required for the verification and snapshot tools.
+Use Go 1.27.3. Consuming `yamlview`, or building all packages, also requires a native C compiler and `CGO_ENABLED=1`. The `source`, `edit`, `index`, and `workspace` packages can be used without CGO. Python 3 is required only for this repository's verification and snapshot tools.
 
 ```sh
 GOWORK=off CGO_ENABLED=1 go build ./...
@@ -31,7 +37,7 @@ python3 tests/native.py --expected-platform linux/amd64
 
 Choose the native platform for your machine: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, or `windows/amd64`. The consumer runner rejects cross-compilation. See [verification instructions](tests/README.md) for evidence output and isolated delivery checks. A build alone does not validate consumer behavior or editor integration.
 
-For vendored consumers, `go mod vendor` needs the grammar's `tree_sitter` headers and go-tree-sitter's `src/include` directory restored alongside the vendored sources; [the vendor probe](tests/vendor_e2e.py) demonstrates this requirement.
+For vendored `yamlview` consumers, `go mod vendor` needs the grammar's `tree_sitter` headers and go-tree-sitter's `include` and `src` directories restored alongside the vendored sources; [the vendor probe](tests/vendor_e2e.py) demonstrates this requirement.
 
 ## Workspace behavior
 
@@ -41,7 +47,7 @@ Keep current-file work independent of background discovery. Accept open buffers 
 
 The public consumers exercise actual Application/AppProject and Workflow/WorkflowTemplate YAML fixtures, input races, incremental invalidation, directory continuation, capacity limits, and buildable fault-injection variants. These verify the shared mechanisms, not full Argo language-server behavior or Zed startup latency.
 
-[Design ablations](docs/design-ablation.md) record which duplicate states and model requirements were removed, which algorithms were simplified, and which proposed deletions failed the resource or responsiveness requirements. The unreleased APIs omit Queue.Generation and the index's Parent/From tree requirements; the three original package contracts remain unchanged.
+[Design ablations](docs/design-ablation.md) record which duplicate states and model requirements were removed, which algorithms were simplified, and which proposed deletions failed the resource or responsiveness requirements. The alpha APIs omit Queue.Generation and the index's Parent/From tree requirements; the three original package contracts remain unchanged.
 
 ## License and attribution
 

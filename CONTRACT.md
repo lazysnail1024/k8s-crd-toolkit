@@ -1,6 +1,6 @@
 # Toolkit public API contract
 
-Contract ID: `toolkit-design-2`. This revision adds `index` and `workspace`; the `toolkit-design-1` APIs and behavior of `source`, `yamlview`, and `edit` remain unchanged. **There is no formal release yet.** The provider is k8s-crd-toolkit. Consumers depend only on this contract and their pinned implementation, without reading provider internals. Verification evidence identifies the exact implementation and platform tested; this contract does not assert that downstream editors have adopted it.
+Contract ID: `toolkit-design-2`. Implementation release: **`v0.0.1-alpha`**. This revision adds `index` and `workspace`; the `toolkit-design-1` APIs and behavior of `source`, `yamlview`, and `edit` remain unchanged. The provider is k8s-crd-toolkit. Consumers depend only on this contract and their pinned implementation, without reading provider internals. Verification evidence identifies the exact implementation and platform tested; this contract does not assert that downstream editors have adopted it.
 
 This file is the sole editable source of the API definition. Consumers retain a byte-identical snapshot and its SHA-256. The contract ID describes the contract revision; Go module SemVer selects an implementation. Upgrades must explicitly update both the snapshot and implementation lock. Changing only a digest does not establish compatibility.
 
@@ -267,8 +267,8 @@ func (s *Scanner) Close() error
 
 ## Consumption and evolution
 
-The Go module is `github.com/lazysnail1024/k8s-crd-toolkit`; a release version has not yet been selected. Consumer locks record the contract ID and digest, module path, and actual implementation version or commit. Missing information means ready=false and must not be represented as readiness for independent release.
+The Go module is `github.com/lazysnail1024/k8s-crd-toolkit`; the first prerelease is `v0.0.1-alpha`. Consumer locks record the contract ID and digest, module path, and actual implementation version or commit. Missing information means ready=false and must not be represented as readiness for independent release.
 
-A new public capability requires the same semantic need in two real consumers and must not need to recognize any product name. Replacing the internal parser does not change the contract. Incompatible changes to a released API require a Go module major path and consumer migration, without forcing synchronized releases across all three repositories.
+A new public capability requires the same semantic need in two real consumers and must not need to recognize any product name. Replacing the internal parser does not change the contract. Published tags are immutable. During v0/alpha development, later versions may make documented incompatible changes with an explicit contract revision and consumer migration; consumers must opt in to each upgrade. From v1 onward, incompatible changes to a stable released API require a new Go module major version and its corresponding major path (v2 and later), without forcing synchronized releases across all three repositories.
 
 Consumer validation calls public APIs from an independent module and uses real process output to check coordinates, structure, edited bytes, and failures for known inputs. Expectations are written independently of the implementation. It requires neither an invented fourth CRD rule system nor access to this repository's development design or internal types.
