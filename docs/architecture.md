@@ -1,6 +1,6 @@
 # 当前实现与隔离边界
 
-`k8s-crd-toolkit` 提供文件输入、YAML 结构、文本编辑、摘要索引和有界工作调度。它的输入是调用方选定的文本、目录和不透明标识；识别 Argo 资源、解释引用、决定诊断和生成 LSP 响应由插件完成。精确 API 以[公共合同](../CONTRACT.md)为准。
+`k8s-crd-toolkit` 提供文件输入、YAML 结构与有效值、编译后 Schema 查询、文本编辑、摘要索引和有界工作调度。它的输入是调用方选定的文本、目录和不透明标识；识别 Argo 资源、解释引用、决定诊断和生成 LSP 响应由插件完成。精确 API 以[公共合同](../CONTRACT.md)为准。
 
 ## 模块与状态所有者
 
@@ -9,6 +9,8 @@
 | [`source`](../source/snapshot.go) | URI、revision、UTF-8 文本 → 不可变 `Snapshot`；字节位置 ↔ UTF-16 位置 | 快照持有文本和行索引；不读取文件、不解释 URI |
 | [`yamlview`](../yamlview/view.go) | context、快照 → 多文档 `View`、结构节点、原始 span、语法问题 | Go 结构视图；依赖 `source` 和内部 parser；`Raw` 可共享输入字符串的底层存储 |
 | [`yamlview/internal/parser`](../yamlview/internal/parser/parser.go) | 文本片段 → 复制出的 Go 节点 | 每次解析独占 Tree-sitter parser/tree，调用结束关闭；通过 CGO 接入 vendored grammar |
+| [`yamlvalue`](../yamlvalue/project.go) | 单文档视图、快照、预算与 tag 策略 → 严格有效值、来源、共享 anchor、调用方指定根字段提示 | 复用 yaml.v3 与 sigs YAML 解码；临时图在调用结束丢弃；依赖 `source` / `yamlview` |
+| [`schemaquery`](../schemaquery/query.go) | 已编译 jsonschema/v6 图、value path、当前值与预算 → metadata、类型、候选或显式未支持状态 | 无持久状态、加载器或 compiler；schema 与值由调用方持有且调用期间不可变 |
 | [`edit`](../edit/plan.go) | 基础快照、下一 revision、替换计划 → 校验后的新快照 | 无持久状态；依赖 `source`；不执行用户文件写入 |
 | [`index`](../index/index.go) | URI、scope、revision、`Facts` → 查询结果和直接受影响 URI | 文件条目、scope 状态、定义与反向依赖、容量计数；依赖 `source`，不持有全文或 YAML 树 |
 | [`workspace.Documents`](../workspace/documents.go) | 已接受的编辑器文本或带票据的磁盘结果 → 快照 | 打开缓冲区、读票据、内部 revision 和 `OpenBytes`；关闭文件的全文不缓存 |
@@ -36,6 +38,18 @@
 内部 parser 在一次调用中创建 parser/tree，将节点复制成 Go 值后关闭原生对象。当前桥接使用 10 ms 的原生解析时间片，在片间检查取消并恢复同一次解析；时间片不是输入总时限。vendored scanner 的序列化预算通过线程局部标志报告，Go 在解析、检查和关闭期间锁定 OS 线程。细节见 [parser](../yamlview/internal/parser/parser.go) 与 [grammar 补丁说明](../yamlview/internal/parser/grammar/README.md)。
 
 `View` 不需要调用 `Close`，但保留 `View` 或 `Node.Raw` 可能保留输入全文。持久索引只应接收提取后的摘要；消费者自己的业务摘要也必须检查其字符串和结构的所有权。
+
+### yamlvalue：结构与有效值分开
+
+[`project.go`](../yamlvalue/project.go) 接受同一快照中的完整文档，复用成熟 YAML 解码器实现严格普通值和 alias/merge 展开；不引入另一套语法。`origin.go` 表达独立原文、派生使用点和共享 anchor，`fields.go` 只返回调用方点名的根字段提示，失败时的提示不能作为完整资源事实。`limits.go` 区分展开工作与有效结果节点；插件继续负责整个流/请求的总预算和是否拒绝显式标准 tag。
+
+投影不解释 GVK、namespace、ApplicationSet 或 Workflow 继承；这些仍由插件根据目标版本判断。原始位置和投影来源可能引用输入，因此关闭文件的持久索引只能保留分离后的摘要。派生来源只能支撑保守诊断或导航，不能自动变成可独立编辑的标量。
+
+### schemaquery：查询现有编译图
+
+两个插件将正在用于校验的 jsonschema/v6 编译图交给 [`query.go`](../schemaquery/query.go)。`Lookup`、`Values`、`AllowsKey`、`Type` 和 `SelectShapes` 共用有限工作预算，处理静态引用、数组及组合分支；枚举候选仍交原编译 validator 检查，oneOf 保留恰好一分支有效的规则。未完成字段不阻止自身修复，明确的有限兄弟字段才用于分支选择。
+
+未实现的条件/动态结构返回 `ErrUnsupported`，超限返回 `ErrBudget`。取消只在解码/校验调用间检查，不宣称可以中断第三方的一次调用。公共包不加载 Schema、不选择产品版本、不缓存编译器、不生成 LSP Completion/Quick Fix；Kubernetes 特有 annotation 和 domain no-new-error 证明仍由调用方负责。
 
 ### edit：同一基础快照上的原子校验
 
@@ -65,7 +79,7 @@
 
 [`query.go`](../index/query.go) 的 `Definitions`、`References`、`Symbols` 只提供 fresh 位置；`Dependents` 为调度保留 pending 摘要的依赖。`GetFile` 的 revision 与返回 facts 来自同一受锁保护的状态。
 
-`Symbols` 按名字做区分大小写的子串匹配，按 URI、span、ID 稳定排序，保留至多 `limit` 个候选并显式返回 `Truncated`。实现使用有界 heap，仍需遍历已知候选；它不提供任意工作区的固定耗时保证。
+`Symbols` 按名字做区分大小写的子串匹配；`SymbolsWithPrefix` 先按不透明 key 前缀过滤，再应用结果上限。kind/namespace 编码由调用方决定，避免先截断全域候选再筛选而漏掉真正相关资源。两者按 URI、span、ID 稳定排序，保留至多 `limit` 个候选并显式返回 `Truncated`。实现使用有界 heap，仍需遍历已知候选；它不提供任意工作区的固定耗时保证。
 
 `State.Pending == 0` 仅说明已知文件没有等待替换。扫描完整、读入成功、配置稳定、下游分析结束、目标唯一性均需消费者的额外证据。
 
@@ -130,15 +144,7 @@ Scanner 不跟随根以下的符号链接；根本身为符号链接会产生显
 
 ## 两个插件的实际引用与隔离
 
-两个语言服务器将公共包编译进各自 Go 程序，通过同一 Go module 源码提交接入；各自实例化 Documents、Index、WorkQueue 等，没有共享进程、缓存、文件表或 CD ↔ Workflows 的直接依赖。同一 source pin 和合同保证实现与 API 约定一致，不提供跨插件自动跳转或共享资源语义。当前两仓的 [Argo CD 锁文件](https://github.com/lazysnail1024/zed-argocd/blob/main/contracts/toolkit.lock.json)与 [Workflows 锁文件](https://github.com/lazysnail1024/zed-argo-workflows/blob/main/contracts/toolkit.lock.json)均记录：
-
-| 锁定项 | 当前值与意义 |
-|---|---|
-| module | `github.com/lazysnail1024/k8s-crd-toolkit` |
-| 源码提交 | `b1e411d4b3abe5c1ad70518be161c1daff717d61`；消费者实际采用的实现 |
-| Go 版本标识 | `v0.0.0-20261110114800-b1e411d4b3ab`；该提交的 pseudo-version |
-| 合同 | `toolkit-design-3`，`CONTRACT.md` 的 SHA-256 为 `2477677871f82f8bc9a1c84d9bb44c709edcaf03e92b421a4ffbbd2c41d28c92` |
-| 交付方式 | `go-module-commit`，`published: false`；直接依赖源码，无需 alpha tag/release |
+两个语言服务器将公共包编译进各自 Go 程序，通过同一 Go module 源码提交接入；各自实例化 Documents、Index、WorkQueue 等，没有共享进程、缓存、文件表或 CD ↔ Workflows 的直接依赖。同一 source pin 和合同保证实现与 API 约定一致，不提供跨插件自动跳转或共享资源语义。实际模块提交与 Go pseudo-version 以各消费者的 [Argo CD 锁文件](https://github.com/lazysnail1024/zed-argocd/blob/main/contracts/toolkit.lock.json)和 [Workflows 锁文件](https://github.com/lazysnail1024/zed-argo-workflows/blob/main/contracts/toolkit.lock.json)为准，文档不另外维护可漂移的实现版本副本。当前接口合同为 `toolkit-design-4`。消费者同步保存合同原文与 SHA-256、模块完整 Git SHA、Go sums 和 vendor 文件清单；引用方式是 `go-module-commit`，无需 alpha tag 或 release。
 
 源码 pin 锁定实现，合同摘要锁定接口约定，`go.sum` 及消费者 vendored 文件清单锁定实际依赖内容。公共仓文档更新或分支前进不会自动升级插件。升级需在消费者显式更新这些锁、恢复并校验 CGO 支持文件，再跑消费者回归；不能以合同 ID 相同替代实现校验。
 
@@ -146,11 +152,12 @@ Scanner 不跟随根以下的符号链接；根本身为符号链接会产生显
 |---|---|---|
 | 输入、索引、工作和发现 | [`internal/lsp/incremental.go`](https://github.com/lazysnail1024/zed-argocd/blob/main/internal/lsp/incremental.go) 组合 Documents、WorkQueue、Membership、Scanner、Index；查询在 `incremental_query.go` | [`internal/lsp/catalog.go`](https://github.com/lazysnail1024/zed-argo-workflows/blob/main/internal/lsp/catalog.go)、`catalog_inputs.go`、`catalog_discovery.go` 组合相同机制 |
 | YAML 与事实提取 | [`internal/analysis/summary.go`](https://github.com/lazysnail1024/zed-argocd/blob/main/internal/analysis/summary.go)、`projection.go` 等处理 Application、ApplicationSet、AppProject 和项目引用 | [`internal/analysis/index.go`](https://github.com/lazysnail1024/zed-argo-workflows/blob/main/internal/analysis/index.go)、`projection.go`、`symbols.go` 等处理 Workflow 资源、模板和调用关系 |
-| 文本修改 | analysis 的 fixes/fields 与 lsp/workspace 的 pins 使用 `edit` 校验计划，插件负责动作与客户端交互 | analysis 的 edits/pin/quickfixes 与 lsp 的 edits 使用 `edit`，插件负责业务适用性与客户端交互 |
+| 有效值与 Schema 查询 | `projection.go` 和 `schema_queries.go` 使用公共 `yamlvalue` / `schemaquery`，ApplicationSet 投影、目标 Schema catalog 与 Kubernetes annotation 仍在 analysis | `projection.go` 和 `query_schema.go` 使用相同公共包，Workflow 表达式/继承、目标 Schema catalog 与语义校验仍在 analysis |
+| 文本修改 | analysis 的 fixes/fields/rename/project_rename 与 lsp/workspace 的 pins 使用 `edit` 校验计划，插件负责动作与客户端交互 | analysis 的 edits/externalrename/pin/quickfixes 与 lsp 的 edits 使用 `edit`，插件负责业务适用性与客户端交互 |
 | 保留在插件的策略 | `.argocd-ls.yaml`、版本/catalog、目标和资源归属、诊断、worker、watcher 与 LSP 发布 | `.argo-workflows-ls.yaml`、目标配置、外部模板绑定、调用语义、缓存策略、worker 与 LSP 发布 |
 | 原生依赖交付 | [`tools/vendor_c.py`](https://github.com/lazysnail1024/zed-argocd/blob/main/tools/vendor_c.py) 校验并补齐 vendored 支持文件 | [`scripts/vendor-native.py`](https://github.com/lazysnail1024/zed-argo-workflows/blob/main/scripts/vendor-native.py) 补齐 vendored 支持文件 |
 
-两者当前都使用 `WorkQueue` 管理实际执行；`Queue` 仍是面向仅需 pending 通知的公共接口。`Scope` 的业务划分、跨资源 key 编码、namespace、`templateRef`/项目引用解释始终由消费者定义。公共库可以索引引用和多个候选，但不能据此保证某个 Argo 跳转或修改合法。
+两者当前都使用 `WorkQueue` 管理实际执行；`Queue` 仍是面向仅需 pending 通知的公共接口。`Scope` 的业务划分、跨资源 key 编码、namespace、`templateRef`/项目引用解释始终由消费者定义。公共库可以索引引用和多个候选，但不能据此保证某个 Argo 跳转或修改合法。跨文件重命名的引用闭包、namespace、动态来源拒绝、版本化 documentChanges 和 before/after 语义检查均留在插件；公共 `edit` 只校验一份快照，不添加批量 Rename 框架。
 
 ## 验证范围
 

@@ -6,7 +6,7 @@ MODULE='github.com/lazysnail1024/k8s-crd-toolkit'
 def create(destination):
  destination=pathlib.Path(destination).resolve();destination.mkdir(parents=True,exist_ok=True)
  paths=[ROOT/x for x in ('go.mod','go.sum','LICENSE','CONTRACT.md')]
- for name in ('source','edit','yamlview','index','workspace'):paths.extend(p for p in (ROOT/name).rglob('*') if p.is_file() and not p.name.endswith('_test.go'))
+ for name in ('source','edit','yamlview','yamlvalue','schemaquery','index','workspace'):paths.extend(p for p in (ROOT/name).rglob('*') if p.is_file() and not p.name.endswith('_test.go'))
  contents={}
  for p in sorted(paths,key=lambda p:p.relative_to(ROOT).as_posix()):
   if p.is_symlink() or not p.is_file():raise ValueError('missing/linked runtime input: '+str(p))

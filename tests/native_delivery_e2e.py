@@ -21,10 +21,10 @@ try:
    with tempfile.TemporaryDirectory(prefix='toolkit-clean-') as d:
     repo=pathlib.Path(d)/'checkout';repo.mkdir()
     for name in ['go.mod','go.sum','LICENSE','CONTRACT.md']:shutil.copyfile(root/name,repo/name)
-    for name in ['source','edit','yamlview','index','workspace','tests','tools']:shutil.copytree(root/name,repo/name,ignore=shutil.ignore_patterns('__pycache__'))
+    for name in ['source','edit','yamlview','yamlvalue','schemaquery','index','workspace','tests','tools']:shutil.copytree(root/name,repo/name,ignore=shutil.ignore_patterns('__pycache__'))
     script=repo/'tests/native.py';original=script.read_bytes()
     if variant=='empty-suite':
-     text=script.read_text();old="for stage in ['source','edit','yaml','audit','budget','retention','resume','resources','index','workspace']:";assert old in text;script.write_text(text.replace(old,'for stage in []:'))
+     text=script.read_text();old="for stage in ['source','edit','yaml','yamlvalue','schemaquery','audit','budget','retention','resume','resources','index','workspace']:";assert old in text;script.write_text(text.replace(old,'for stage in []:'))
     if variant=='rss-failure':
      f=repo/'tests/consumer/rss_linux.go';text=f.read_text();old='func rss() int64 {';assert old in text
      f.write_text(text.replace(old,'var rssCalls int\nfunc rss() int64 {\n rssCalls++\n if rssCalls == 2 { return -1 }'))

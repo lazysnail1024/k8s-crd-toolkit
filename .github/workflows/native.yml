@@ -90,6 +90,7 @@ jobs:
         run: >-
           python tests/ablate.py
           index-ticket index-reuse index-missing index-position index-fresh index-retention
+          index-prefix schemaquery-validation yamlvalue-origin
           workspace-overlay workspace-ticket workspace-discard
           workspace-coalescing workspace-fairness workspace-priority
           workspace-workqueue-fairness workspace-workqueue-followup

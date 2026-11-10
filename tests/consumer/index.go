@@ -20,6 +20,7 @@ func indexCases() {
 	indexDependencyCases()
 	indexIdentityCases()
 	indexSymbolOrderCases()
+	indexPrefixCases()
 	indexSymbolAllocationCase()
 	indexScopeMoveCases()
 	indexCopyCases()

@@ -29,6 +29,10 @@ func main() {
 		resourceCases()
 	} else if stage == "yaml" {
 		yamlCases()
+	} else if stage == "yamlvalue" {
+		yamlValueCases()
+	} else if stage == "schemaquery" {
+		schemaQueryCases()
 	} else if stage == "index" {
 		indexCases()
 	} else if stage == "workspace" {
