@@ -47,7 +47,7 @@ try:
   run([go,'mod','verify'],consumer)
   if build['exitCode']==0:
    report['binarySHA256']=sha(out/'consumer');shutil.copyfile(out/'consumer',out/('consumer-'+report['binarySHA256']));run([go,'version','-m',str(out/'consumer')],consumer)
-   for stage in ['source','edit','yaml','audit','resources']:
+   for stage in ['source','edit','yaml','audit','resources','index','workspace']:
     result=run([str(out/'consumer'),stage],consumer)
     try:assertions=json.loads(result['stdout']);report['assertions'][stage]=len(assertions)>0 and all(assertions.values())
     except Exception:report['assertions'][stage]=False

@@ -62,3 +62,42 @@ jobs:
           path: artifacts/native/
           if-no-files-found: error
           retention-days: 30
+  index_regression:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CC: gcc-13
+      CGO_ENABLED: '1'
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          check-latest: false
+          cache: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14.0'
+      - name: Vet public packages
+        run: go vet ./...
+      - name: Exercise concurrent public consumers with race detection
+        env:
+          GOFLAGS: '-race'
+        run: python tests/e2e.py index-race
+      - name: Verify index and workspace guards with buildable ablations
+        run: >-
+          python tests/ablate.py
+          index-ticket index-missing index-position index-fresh index-retention
+          workspace-overlay workspace-ticket workspace-discard
+          workspace-generation workspace-fairness workspace-priority
+          workspace-complete workspace-filter
+      - name: Retain regression evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: toolkit-index-regression
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 30

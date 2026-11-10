@@ -57,12 +57,12 @@ try:
    meta=json.loads(required([go,'list','-m','-json',module],c));source=pathlib.Path(meta['Dir']);name=module.rsplit('/',1)[1]
    shutil.copyfile(source/'LICENSE',licenses/(name+'-MIT'))
    if (source/'src/unicode/LICENSE').is_file():shutil.copyfile(source/'src/unicode/LICENSE',licenses/'tree-sitter-Unicode')
-  for stage in ['source','edit','yaml','audit','budget','retention','resume','resources']:
+  for stage in ['source','edit','yaml','audit','budget','retention','resume','resources','index','workspace']:
    r=run([str(binary),stage],c)
    try:values=json.loads(r['stdout']);report['stageResults'][stage]=values;report['assertions'][stage]=r['exitCode']==0 and bool(values) and all(v is True for v in values.values())
    except Exception:report['assertions'][stage]=False
 except Exception as e:report['error']=repr(e)
 finally:
- report['assertions']['eightNonemptySuites']=len(report['stageResults'])==8 and all(bool(v) for v in report['stageResults'].values())
+ report['assertions']['requiredNonemptySuites']=set(report['stageResults'])=={'source','edit','yaml','audit','budget','retention','resume','resources','index','workspace'} and all(bool(v) for v in report['stageResults'].values())
  report['passed']='error' not in report and bool(report['assertions']) and all(report['assertions'].values()) and all(s['exitCode']==0 for s in report['steps']);report['replay']=sys.argv
  text=json.dumps(report,indent=2);(out/'report.json').write_text(text);(out/('report-'+str(time.time_ns())+'.json')).write_text(text);print(json.dumps({'passed':report['passed'],'assertions':report['assertions'],'error':report.get('error')}));sys.exit(0 if report['passed'] else 1)

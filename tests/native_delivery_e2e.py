@@ -21,10 +21,10 @@ try:
    with tempfile.TemporaryDirectory(prefix='toolkit-clean-') as d:
     repo=pathlib.Path(d)/'checkout';repo.mkdir()
     for name in ['go.mod','go.sum','LICENSE','CONTRACT.md']:shutil.copyfile(root/name,repo/name)
-    for name in ['source','edit','yamlview','tests','tools']:shutil.copytree(root/name,repo/name,ignore=shutil.ignore_patterns('__pycache__'))
+    for name in ['source','edit','yamlview','index','workspace','tests','tools']:shutil.copytree(root/name,repo/name,ignore=shutil.ignore_patterns('__pycache__'))
     script=repo/'tests/native.py';original=script.read_bytes()
     if variant=='empty-suite':
-     text=script.read_text();old="for stage in ['source','edit','yaml','audit','budget','retention','resume','resources']:";assert old in text;script.write_text(text.replace(old,'for stage in []:'))
+     text=script.read_text();old="for stage in ['source','edit','yaml','audit','budget','retention','resume','resources','index','workspace']:";assert old in text;script.write_text(text.replace(old,'for stage in []:'))
     if variant=='rss-failure':
      f=repo/'tests/consumer/rss_linux.go';text=f.read_text();old='func rss() int64 {';assert old in text
      f.write_text(text.replace(old,'var rssCalls int\nfunc rss() int64 {\n rssCalls++\n if rssCalls == 2 { return -1 }'))
@@ -46,7 +46,7 @@ try:
     passed=(child.returncode==0 and observed.get('passed') is True) if variant=='isolated-source' else (child.returncode!=0 and observed.get('passed') is False)
     if variant in ('empty-suite','rss-failure'):
      passed=passed and assertions.get('noReplace') is True and any('build' in s['argv'] and s['exitCode']==0 for s in observed.get('steps',[]))
-    if variant=='empty-suite':passed=passed and assertions.get('eightNonemptySuites') is False
+    if variant=='empty-suite':passed=passed and assertions.get('requiredNonemptySuites') is False
     if variant=='rss-failure':
      passed=passed and observed.get('stageResults',{}).get('resources',{}).get('resident-growth') is False
      passed=passed and any(s['argv'][-1]=='resources' and s['exitCode']!=0 and -1 in json.loads(s['stderr'])['rssBytes'] for s in observed.get('steps',[]))

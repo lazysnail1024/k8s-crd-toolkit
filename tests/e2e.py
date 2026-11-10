@@ -14,7 +14,7 @@ with tempfile.TemporaryDirectory() as d:
  with (c/'go.mod').open('a') as f:f.write('\nreplace github.com/lazysnail1024/k8s-crd-toolkit => '+str(target)+'\n')
  steps=[run([go,'version'],c),run(['cc','--version'],c),run([go,'mod','tidy'],c),run([go,'build','-buildvcs=false','-o',str(out/'consumer'),'.'],c)]
  if steps[-1]['exitCode']==0:steps.append(run([str(out/'consumer'),stage.split('-')[0]],c))
- report=dict(environment={k:env.get(k) for k in ['GO','GOROOT','GOMODCACHE','GOCACHE','GOWORK','CGO_ENABLED']}, targetHashes={str(p.relative_to(target)):sha(p) for p in target.rglob('*') if p.is_file() and '.git' not in p.parts and 'artifacts' not in p.parts}, replay='python3 tests/e2e.py '+stage+' '+str(target),stage=stage,steps=steps,hashes={str(p.relative_to(root)):sha(p) for p in root.rglob('*') if p.is_file() and '.git' not in p.parts and 'artifacts' not in p.parts},binarySHA256=sha(out/'consumer') if (out/'consumer').exists() else None)
+ report=dict(environment={k:env.get(k) for k in ['GO','GOROOT','GOMODCACHE','GOCACHE','GOWORK','CGO_ENABLED','GOFLAGS','GOTOOLCHAIN','CC']}, targetHashes={str(p.relative_to(target)):sha(p) for p in target.rglob('*') if p.is_file() and '.git' not in p.parts and 'artifacts' not in p.parts}, replay='python3 tests/e2e.py '+stage+' '+str(target),stage=stage,steps=steps,hashes={str(p.relative_to(root)):sha(p) for p in root.rglob('*') if p.is_file() and '.git' not in p.parts and 'artifacts' not in p.parts},binarySHA256=sha(out/'consumer') if (out/'consumer').exists() else None)
  # Keep the precise source/test input beside each historical report, including
  # ablated source, so hashes remain verifiable after the checkout changes.
  archive=out/('inputs-'+str(time.time_ns())+'.zip')

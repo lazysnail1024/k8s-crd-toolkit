@@ -1,12 +1,12 @@
 # Toolkit public API contract
 
-Contract ID: `toolkit-design-1`. This is a frozen public behavior contract. The local implementation has passed independent consumer E2E tests on Linux amd64; **there is no formal release yet**. The provider is k8s-crd-toolkit. Consumers depend only on this contract and their pinned implementation, without reading provider internals.
+Contract ID: `toolkit-design-2`. This revision adds `index` and `workspace`; the `toolkit-design-1` APIs and behavior of `source`, `yamlview`, and `edit` remain unchanged. **There is no formal release yet.** The provider is k8s-crd-toolkit. Consumers depend only on this contract and their pinned implementation, without reading provider internals. Verification evidence identifies the exact implementation and platform tested; this contract does not assert that downstream editors have adopted it.
 
 This file is the sole editable source of the API definition. Consumers retain a byte-identical snapshot and its SHA-256. The contract ID describes the contract revision; Go module SemVer selects an implementation. Upgrades must explicitly update both the snapshot and implementation lock. Changing only a digest does not establish compatibility.
 
 ## Dependencies and inputs
 
-The only public packages are `source`, `yamlview`, and `edit`, with dependencies `yamlview → source` and `edit → source`. They contain no Argo GVKs or fields, schemas, LSP, filesystem scanning, namespaces, or product versions. A URI is an opaque caller-supplied string; callers own path normalization and file identity.
+The public packages are `source`, `yamlview`, `edit`, `index`, and `workspace`. All four other packages depend only on `source` within this module; `index` and `workspace` are independently usable. They contain no Argo GVKs or fields, schemas, LSP, namespace interpretation, or product versions. Only `workspace.Scanner` performs filesystem discovery. No package writes user files, starts workers, installs watchers, or accesses clusters. A URI is an opaque caller-supplied string; callers own path normalization and file identity. Scanner paths are native absolute filesystem paths, not URIs.
 
 The following Go declarations define the public API. See README for usage and validation. Consumers must not import internal packages or third-party ASTs. The API does not introduce `any` configuration bags or domain callbacks.
 
@@ -104,6 +104,167 @@ Every Replacement refers to **the same original snapshot**, unlike the sequentia
 | Valid non-overlapping replacements | Returns the next snapshot; all other bytes unchanged |
 
 This package establishes only text preconditions. Consumers decide whether a domain fix is valid and whether the version still matches when LSP applies it. Cross-file transactions and implicit disk writes are unsupported.
+
+## index: incremental symbol and dependency summaries
+
+```go
+type Scope string
+type Key string
+type SymbolID string
+type Symbol struct {
+    ID, Parent SymbolID
+    Key Key
+    Name, Kind string
+    Span, Selection source.Span
+}
+type Reference struct {
+    Target Key
+    From SymbolID
+    Span source.Span
+}
+type Facts struct {
+    SemanticDigest [32]byte
+    Symbols []Symbol
+    References []Reference
+    Dependencies []Key
+}
+type Limits struct { Files, Symbols, References, Bytes int }
+type Ticket struct { /* private */ }
+type Index struct { /* private */ }
+type State struct { Generation uint64; Pending int }
+type File struct {
+    URI source.URI
+    Scope Scope
+    Revision source.Revision
+    Fresh bool
+    Facts Facts
+}
+type Definition struct { URI source.URI; Revision source.Revision; Symbol Symbol }
+type Use struct { URI source.URI; Revision source.Revision; Reference Reference }
+type SymbolResult struct { Items []Definition; State State; Truncated bool }
+type Change struct {
+    Generation uint64
+    SemanticChanged bool
+    Affected []source.URI
+}
+var ErrStaleTicket error
+var ErrLimit error
+
+func New(limits Limits) (*Index, error)
+func (i *Index) Begin(uri source.URI, scope Scope, revision source.Revision) (Ticket, error)
+func (i *Index) Commit(ticket Ticket, facts Facts) (Change, error)
+func (i *Index) Remove(uri source.URI) (Change, error)
+func (i *Index) GetFile(uri source.URI) (File, bool, State)
+func (i *Index) Definitions(scope Scope, key Key) ([]Definition, State)
+func (i *Index) References(scope Scope, key Key) ([]Use, State)
+func (i *Index) Dependents(scope Scope, key Key) ([]source.URI, State)
+func (i *Index) Symbols(scope Scope, query string, limit int) (SymbolResult, error)
+```
+
+### Identity and ownership
+
+- Scope is an opaque caller-defined visibility partition. It does not imply a directory, Git repository, namespace, or cluster. Each URI occupies one scope per Index; a scope may span many filesystem roots. Keys are opaque **within a scope**, and the `(scope, key)` pair is structurally distinct, not concatenated. Consumers encode any resource kind, namespace, template owner, or configuration identity they need in their own keys.
+- A file can contain many documents and symbols. Symbol IDs and Parent/From identities are local to that URI. IDs and keys must be nonempty; parents and reference sources must exist in that file. Parent cycles and duplicate IDs are rejected. Multiple symbols or files may define the same key: queries preserve every candidate and never choose a binding.
+- Spans are byte ranges in the file revision. The index checks nonnegative, ordered ranges and Selection containment within Span. It does not retain text and therefore cannot check UTF-8 boundaries or the actual file length; consumers must validate those against the source snapshot before submission. Parent relationships do not require physical source-range containment, allowing projected facts with explicit source origins.
+- Facts are summaries, not a place to store ASTs or full document text. Mutable containers are copied on entry and exit; stored strings are detached from caller string backing storage. Returned strings are immutable Go values. Input containers must not be concurrently changed during a call.
+
+### Updates, invalidation, and freshness
+
+- Construct an Index with New; do not copy it after use. Methods support concurrent callers, and each call observes an atomic state. There is no multi-call transaction: a consumer combining multiple queries must compare their scope generations and revalidate before a correctness-sensitive operation.
+- Begin announces a new analysis input **before** queuing or computing it. Existing locations immediately cease to appear in Definitions, References, Symbols, and GetFile. Old summaries remain privately available for semantic comparison and dependency invalidation. Repeated Begin for one URI does not duplicate pending counts.
+- Revisions may increase or remain equal for a configuration recomputation; lower revisions fail while a file is registered. Each successful Begin also allocates a distinct opaque ticket. A ticket from another Index, an earlier Begin, a removed/recreated file, or an already successful Commit is rejected with ErrStaleTicket. Remove/reopen remains safe even if a consumer reuses its numeric source revision. Zero tickets are invalid.
+- Commit atomically replaces the complete file fact set, including empty sets. Invalid facts or a capacity error leave the file pending and the ticket retryable; they never publish an empty successful analysis. Begin admission failures leave existing state unchanged, so the caller must record the failed input and must not present older facts as current; Remove can withdraw them when admission cannot be retried.
+- Remove withdraws all facts and dependencies, releases their budgets, and revokes pending tickets. Unknown URIs are a no-op. Removing a disk file is not permission to Remove an authoritative open buffer; input ownership is decided before changing the index.
+- GetFile returns fresh facts, or pending metadata with no old facts. During a scope migration, the old scope remains pending until its old facts are replaced or removed; the destination is pending too. Intermediate abandoned destinations are released.
+- State.Generation changes when the relevant scope changes; unknown scopes use the current index generation. State.Pending counts **known files waiting for facts**, not undiscovered files or downstream diagnostics. Change.Generation is the index-wide sequence. `Pending == 0` never proves discovery completeness, nonexistence, unique binding, or a safe rename.
+
+### Dependencies and semantic changes
+
+- Every Reference also establishes a reverse dependency, even if its target has no definitions. Dependencies adds keys without navigable source positions, including caller-defined path/configuration dependencies. Empty target/dependency keys are rejected.
+- Definitions and References return fresh locations; Dependents intentionally also includes old pending summaries so a target change can still schedule its callers. All URI sets are deduplicated and sorted. Definitions sort by URI, Span, and symbol ID; References sort by URI, Span, and From.
+- SemanticDigest must reflect meaning relevant to consumers but absent from the public facts, for example a template signature or policy. The index additionally compares symbol identity/parent/key/name/kind, reference target/source, and dependency multisets. Array order and spans do not affect semantic equality; duplicate reference/dependency counts do. Reusing a digest cannot hide a changed key or relation.
+- A semantic or scope change returns the changed URI plus direct dependents of its old and new definition keys in Change.Affected. This includes previously unresolved uses and duplicate-candidate changes. A position-only change updates locations and revision but returns only the changed URI. Navigation caches must still use scope Generation/revision freshness rather than relying on Affected to detect moved locations. The caller schedules downstream recomputation and further propagation; the library does not run analysis.
+- Symbols performs a case-sensitive substring search over fresh names. A positive limit bounds retained result items, sorted deterministically; Truncated reports additional known matches. Search still visits known symbols in the scope and is not a filesystem search or a completeness proof.
+
+### Capacity
+
+All Limits fields must be positive. Files counts registered URIs, including pending ones; Symbols counts retained definitions; References counts reference and explicit dependency entries, including duplicates. Bytes counts logical retained string lengths in facts, URIs, and scope metadata, including the old scope needed during a pending migration. It is not an RSS estimate. Admission checks are atomic, failed commits do not consume capacity, and removal releases capacity. Callers must retain an explicit limited/incomplete state and apply backpressure or retry on ErrLimit rather than silently drop inputs.
+
+## workspace: authoritative inputs, queues, and resumable discovery
+
+```go
+var ErrStale error
+var ErrLimit error
+var ErrOverlay error
+
+type DocumentLimits struct { Entries, FileBytes, OpenBytes int }
+type ReadTicket struct { /* private */ }
+type Documents struct { /* private */ }
+func NewDocuments(limits DocumentLimits) (*Documents, error)
+func (d *Documents) Open(uri source.URI, text string) (source.Snapshot, error)
+func (d *Documents) Change(uri source.URI, base source.Revision, changes []source.Change) (source.Snapshot, error)
+func (d *Documents) Snapshot(uri source.URI) (source.Snapshot, bool)
+func (d *Documents) BeginRead(uri source.URI) (ReadTicket, error)
+func (d *Documents) PublishRead(ticket ReadTicket, text string) (source.Snapshot, error)
+func (d *Documents) DiscardRead(ticket ReadTicket) bool
+func (d *Documents) Invalidate(uri source.URI)
+func (d *Documents) Close(uri source.URI) bool
+
+type Priority uint8
+const ( Current Priority = iota; Related; Background )
+type Job struct { URI source.URI; Generation uint64; Priority Priority }
+type Queue struct { /* private */ }
+func NewQueue(capacity int) (*Queue, error)
+func (q *Queue) Put(job Job) error
+func (q *Queue) Pop() (Job, bool)
+func (q *Queue) Remove(uri source.URI)
+func (q *Queue) Len() int
+
+type ScanOptions struct {
+    Extensions []string
+    ExcludeDirs []string
+    MaxDirectories int
+}
+type ScanIssue struct { Path string; Err error }
+type Batch struct {
+    Files []string
+    Visited, Pending int
+    Done, Complete bool
+    Issues []ScanIssue
+}
+type Scanner struct { /* private */ }
+func NewScanner(roots []string, options ScanOptions) (*Scanner, error)
+func (s *Scanner) Next(ctx context.Context, maxWork int) (Batch, error)
+func (s *Scanner) Prioritize(directory string) error
+func (s *Scanner) Close() error
+```
+
+### Authoritative input lifecycle
+
+- Documents and Queue are concurrently safe, constructor-initialized objects; neither may be copied after use. Documents requires nonempty URIs and positive limits. Entries bounds open buffers plus outstanding reads. FileBytes bounds one input and each intermediate sequential edit result; OpenBytes bounds the total current open-buffer text. Limits exclude caller-held snapshots, caller-owned incoming text, and snapshot line-index overhead.
+- Open establishes an authoritative buffer and revokes earlier disk reads. Opening an already open buffer returns ErrOverlay; use Change with the current source revision. Change is atomic, uses sequential coordinates, and preserves the old buffer on any failure. Snapshot only returns open-buffer content.
+- Documents allocates monotonically increasing revisions across all its input lifetimes. These are independent of LSP versions. The protocol adapter must independently validate incoming editor versions; it must not substitute them for Documents revisions.
+- BeginRead returns ErrOverlay while a buffer is open, enabling callers to skip disk I/O. Otherwise it reserves the newest read of that URI. Perform bounded disk I/O outside the object, then PublishRead. A superseded, cross-instance, replayed, invalidated, or close/reopen ticket returns ErrStale. Other files' updates do not invalidate this ticket.
+- PublishRead returns a snapshot without retaining closed-file text. A valid ticket is consumed even if text is invalid UTF-8 or exceeds FileBytes. After failed/canceled I/O, call DiscardRead with that worker's ticket so abandoned entries do not consume capacity. It releases only a still-matching pending read, returning true; stale, cross-instance, replayed, or superseded tickets return false without touching the latest input or an open buffer. FileBytes is checked on publication; the caller must bound the read before allocating its text.
+- Invalidate revokes a pending disk read after an authoritative disk change/deletion event. It is not worker cleanup: a canceled old worker must use DiscardRead so it cannot revoke a newer worker's read. An open buffer stays authoritative, even if the disk file has disappeared. Close releases the overlay and revokes reads, returning whether a buffer existed. It never restores an old cached disk version: the caller must read current disk content afresh, or remove effective facts if no input remains. Closing can also withdraw an input when its root is removed.
+- Input lifecycle and index lifecycle are separate primitives. A consumer serializes the acceptance of disk results, open/change/close events, configuration changes, and corresponding Index.Begin/Remove operations in its coordinator. Analysis workers receive the accepted snapshot and ticket; they must not create a newer ticket after computing an obsolete result.
+
+### Queue behavior
+
+- Queue capacity must be positive. Job.Generation is a caller-assigned monotonic input generation, not an editor version or a globally interpreted timestamp. For a pending URI, Put keeps the newest generation and highest requested priority; older generations return ErrStale. Equal generations can raise priority. Existing jobs can be updated at capacity; new URIs return ErrLimit when full.
+- Pop follows an 8:4:1 weighted round robin for Current, Related, and Background, skipping empty lanes, with FIFO order within each lane. Under continuous load in all lanes, a background job receives a turn within 13 successful pops. The policy guarantees service opportunities, not elapsed-time latency.
+- Pop removes pending membership immediately. A newer event for a running file can therefore enqueue another job; there is no permanent URI deduplication. The queue does not track completed work or cancel workers. Consumers validate input/ticket freshness, bound worker concurrency, and preserve events when applying backpressure. A priority queue cannot preempt a blocking syscall; foreground responsiveness also needs an available foreground execution slot.
+
+### Discovery behavior
+
+- NewScanner validates options and normalizes native absolute paths without opening the supplied roots, enumerating directories, or reading file contents. Relative paths may consult the current working directory. Extensions is an explicit case-insensitive extension allowlist (for example `.yaml`, `.yml`); empty means all regular files. ExcludeDirs lists exact, case-sensitive directory basenames. Neither YAML extensions nor `.git` exclusions are hardcoded. These filters are discovery policy, not resource recognition.
+- Scanner calls are serial, including Prioritize and Close. Next requires a nonnil context and maxWork in 1..4096. Visited counts inspected entries, opened directories, and empty directory reads. Nonmatching files consume work too. This bounds work units, not milliseconds: OS operations themselves may block.
+- The scanner retains one background cursor and at most one priority cursor, with at most two handles and 512 buffered directory entries. MaxDirectories is a positive bound on remembered directory identities, including completed ones; it is not a limit on the number of ordinary files inspected. Directory identities prevent repeated traversal with overlapping roots or a prioritized descendant.
+- Prioritize can bring a not-yet-discovered directory inside a configured root forward, without waiting to enumerate its parents. It pauses an active background cursor without restarting it. An active priority directory is not preempted by another priority directory. Descendants inherit priority. Excluded paths cannot be reintroduced by Prioritize; an explicitly configured root inside an otherwise excluded ancestor remains an explicit root. Completed directories are not rescanned; create a new Scanner for another reconciliation pass.
+- Child symlinks and nonregular files are skipped. A configured root that is itself a symlink, an unreadable/missing directory, or a file mistaken for a root produces a ScanIssue. Priority paths have their components checked for symlinks. These checks are traversal policy, not a security sandbox against hostile concurrent filesystem mutations.
+- Files are native paths, not predecoded YAML resources. ScanIssue.Err preserves the underlying I/O/limit error where available. A directory error or exhausted MaxDirectories makes the traversal incomplete, while remaining admitted directories can still be processed. Per-call Issues must be accumulated by the caller; the final Complete flag remains false after any such error.
+- Cancellation returns its error and any usable partial Batch; the caller must process those Files before handling the error. The cursor can resume without dropping already-read entries. Cancellation does not claim Complete, and restarting from the root is unnecessary. Close releases handles, is idempotent, and prevents further use.
+- Done reports exhausted enumeration; Complete additionally requires no discovery errors/limits and an open scanner. A successful scan is not a transactional disk snapshot. It does not mean all candidates were read, recognized, indexed, or validated. Consumers combine discovery status, index pending state, queued/running work, and read/analysis failures before asserting a complete semantic scope. Never infer deletion from an incomplete scan or let an older scan delete inputs observed after that pass began.
 
 ## Consumption and evolution
 
