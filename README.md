@@ -1,62 +1,64 @@
 # k8s-crd-toolkit
 
-A Go module for immutable text, YAML structure, validated edits, incremental symbol indexes, and bounded workspace discovery. It contains no Kubernetes or Argo domain rules, cluster access, or user-file writes.
+面向 Go 语言服务器的公共源码依赖，提供不可变文本、保留位置的 YAML 结构、校验式编辑、增量摘要索引和有界文件发现。资源识别、Argo 语义、LSP 传输、worker、配置及编辑器集成由消费者实现。
 
-## Usage
+## 接入
 
-Pin a reviewed source commit. Set `TOOLKIT_COMMIT` to its full Git SHA, then run:
+将 `TOOLKIT_COMMIT` 设置为经过审阅的完整 Git SHA：
 
 ```sh
 go get github.com/lazysnail1024/k8s-crd-toolkit@"$TOOLKIT_COMMIT"
 ```
 
-Keep the resulting Go pseudo-version in `go.mod` and the generated checksums in `go.sum`. A tag or release is not required. Import the packages under `github.com/lazysnail1024/k8s-crd-toolkit`:
+提交生成的 Go pseudo-version 和 `go.sum`；源码引用不要求 tag 或 release。当前两个插件采用的提交和合同见[接入边界](docs/architecture.md#两个插件的实际引用与隔离)。公共包路径均位于 `github.com/lazysnail1024/k8s-crd-toolkit` 下：
 
-- `source`: immutable snapshots, UTF-8 byte spans, UTF-16 positions, and sequential changes.
-- `yamlview`: fault-tolerant YAML parsing that preserves original spans, duplicate keys, and document boundaries.
-- `edit`: atomic replacements with revision, expected-text, and overlap validation.
-- `index`: per-file symbol/reference summaries, reverse dependencies (including missing targets), stale-result protection, unchanged-summary reuse, and bounded symbol search.
-- `workspace`: authoritative open buffers and byte accounting, disk-read tickets, bounded work scheduling, and resumable directory discovery with safe scan reconciliation.
+| 包 | 职责 |
+|---|---|
+| `source` | 不可变快照、UTF-8 字节 span、UTF-16 坐标和顺序修改 |
+| `yamlview` | 容错结构解析、文档边界、重复键、原始位置和语法问题 |
+| `edit` | 基础 revision、原文和区间重叠校验，原子生成新快照 |
+| `index` | 平铺定义/引用、缺失目标的反向依赖、过时结果拒绝、摘要复用和有界符号查询 |
+| `workspace` | 权威打开缓冲区、读票据、工作队列、扫描轮次对账和可续扫的目录发现 |
 
-See [the public API contract](CONTRACT.md) for signatures, limits, and error semantics, [the integration guide](docs/workspace-index.md) for lifecycle and scheduling examples, and [the change log](CHANGELOG.md) for scope. Contract `toolkit-design-3` adds shared lifecycle operations while preserving existing APIs. Consumers explicitly update their contract snapshot and implementation lock; existing plugins do not acquire indexing automatically. Local integration can also use an explicit content snapshot:
+从当前打开文件开始处理，并让关联目录优先于后台发现。索引事实是摘要；目录扫描完成与业务分析完成需要分别判断。公共库不访问集群或写入用户文件。
 
-```sh
-python3 tools/snapshot.py --output ./artifacts/module-proxy
-```
+## 文档
 
-The generated manifest identifies the local module version, contract, source files, and ZIP by digest; it marks the snapshot as unpublished. Production consumer locks use the reviewed source commit and its Go module checksums.
+- [文档入口](docs/README.md)
+- [当前模块实现、状态所有权和两个插件的引用边界](docs/architecture.md)
+- [已发生问题与实验反例的经验教训](docs/lessons-learned.md)
+- [公共 API 合同](CONTRACT.md)：消费者按字节锁定的有效接口合同。
+- [验证指南](tests/README.md)：公共消费者、原生平台、源码快照和反例检查。
 
-## Requirements and build
+## 构建与验证
 
-Use Go 1.27.3. Consuming `yamlview`, or building all packages, also requires a native C compiler and `CGO_ENABLED=1`. The `source`, `edit`, `index`, and `workspace` packages can be used without CGO. Python 3 is required only for this repository's verification and snapshot tools.
+使用 Go 1.27.3。`yamlview` 及全包构建需要本机 C 编译器与 `CGO_ENABLED=1`；`source`、`edit`、`index`、`workspace` 可独立在无 CGO 环境使用。Python 3 仅用于本仓库的验证及源码快照工具。
 
 ```sh
 GOWORK=off CGO_ENABLED=1 go build ./...
 python3 tests/native.py --expected-platform linux/amd64
 ```
 
-Choose the native platform for your machine: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, or `windows/amd64`. The consumer runner rejects cross-compilation. See [verification instructions](tests/README.md) for evidence output and isolated delivery checks. A build alone does not validate consumer behavior or editor integration.
+将平台参数换为实际主机的 `linux/amd64`、`linux/arm64`、`darwin/amd64`、`darwin/arm64` 或 `windows/amd64`。原生消费者拒绝以交叉编译作为验收；库级验证不替代插件 LSP 与 Zed 集成验证。
 
-For vendored `yamlview` consumers, `go mod vendor` needs the grammar's `tree_sitter` headers and go-tree-sitter's `include` and `src` directories restored alongside the vendored sources; [the vendor probe](tests/vendor_e2e.py) demonstrates this requirement.
+vendored 消费者需要在 `go mod vendor` 后补齐 grammar 的 `tree_sitter` 头文件，以及 go-tree-sitter 的 `include`/`src` 目录；[vendor 验证入口](tests/vendor_e2e.py)覆盖这个交付要求。
 
-## Workspace behavior
+本地独立验证可以生成未发布的内容快照：
 
-Keep current-file work independent of background discovery. Accept open buffers first, process related directories in small batches, and queue the remaining workspace with bounded concurrency. The queue coalesces URI notifications; the consumer dispatches the latest accepted snapshot and its original index ticket. Index facts are detached summaries, so closed-file text and parser trees can be released.
+```sh
+python3 tools/snapshot.py --output ./artifacts/module-proxy
+```
 
-`index` stores flat definitions and references, including files with references but no declarations. It preserves multiple definition candidates and never decides namespace, resource identity, or whether a rename is safe. `workspace` does not install watchers or start workers. A discovery pass being complete and an index having no pending files are separate facts; read failures, running work, and changed configurations still need to be accounted for by the consumer.
+manifest 记录源码、合同和 ZIP 摘要。正式消费者依赖仍以已审阅提交、Go sums 及消费者锁文件为准；工具不发布版本。
 
-The public consumers exercise actual Application/AppProject and Workflow/WorkflowTemplate YAML fixtures, input races, incremental invalidation, directory continuation, capacity limits, and buildable fault-injection variants. These verify the shared mechanisms, not full Argo language-server behavior or Zed startup latency.
+## 许可证与依赖来源
 
-[Design ablations](docs/design-ablation.md) record which duplicate states and model requirements were removed, which algorithms were simplified, and which proposed deletions failed the resource or responsiveness requirements. The alpha APIs omit Queue.Generation and the index's Parent/From tree requirements; the three original package contracts remain unchanged.
+本项目代码和文档使用 [MIT](LICENSE)。重新分发时保留相应版权和许可声明。
 
-## License and attribution
-
-Original code and documentation are licensed under [MIT](LICENSE). Retain the copyright and license notices when redistributing copies or substantial portions.
-
-| Dependency | Pinned version | License |
+| 依赖 | 锁定版本 | 许可证 |
 |---|---|---|
 | [go-tree-sitter](https://github.com/tree-sitter/go-tree-sitter) | v0.25.0 | MIT |
-| [tree-sitter-yaml](https://github.com/tree-sitter-grammars/tree-sitter-yaml) | a1c4812a73ec; vendored with a bounded scanner serialization patch | MIT |
-| [go-pointer](https://github.com/mattn/go-pointer) | v0.0.1; indirect dependency | MIT |
+| [tree-sitter-yaml](https://github.com/tree-sitter-grammars/tree-sitter-yaml) | a1c4812a73ec，包含有界 scanner 序列化补丁 | MIT |
+| [go-pointer](https://github.com/mattn/go-pointer) | v0.0.1，间接依赖 | MIT |
 
-See [grammar provenance and patch details](yamlview/internal/parser/grammar/README.md). Tree-sitter's Unicode code retains its [separate copyright and license](https://github.com/tree-sitter/go-tree-sitter/blob/v0.25.0/src/unicode/LICENSE). Third-party licenses are not replaced by this project's MIT license. Source and binary distributions must include the licenses and applicable notices of their actual components. Dependency content is locked by `go.mod` and `go.sum`.
+语法来源、补丁与原始许可见 [grammar 说明](yamlview/internal/parser/grammar/README.md)。Tree-sitter 的 Unicode 实现另有[独立版权和许可](https://github.com/tree-sitter/go-tree-sitter/blob/v0.25.0/src/unicode/LICENSE)。本仓 MIT 许可不替代第三方许可；源码和二进制交付需包含实际组件的适用声明。Go 依赖内容由 `go.mod`、`go.sum` 锁定。
