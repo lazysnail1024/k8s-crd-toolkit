@@ -1,112 +1,76 @@
-# Consumer verification
+# 公共消费者验证指南
 
-Use Go 1.27.3, Python 3, a native C compiler, and writable Go caches. `GO` can select the Go executable; an explicit `GOROOT` must match it. Set `GOWORK=off` and `CGO_ENABLED=1`. Expectations in `consumer/*.go` are independently specified rather than calculated from the implementation.
+这里说明当前可运行的验证入口。模块职责见[架构](../docs/architecture.md)，问题与对应防线见[经验教训](../docs/lessons-learned.md)。以下命令从仓库根目录运行；行为期望保存在 `consumer/*.go`，不从被测实现动态推导。
 
-## Native delivery
+## 环境与原生入口
 
-From this repository, run:
+需要 Go 1.27.3、Python 3、本机 C 编译器和可写 Go cache。设置 `GOWORK=off`、`CGO_ENABLED=1`；`GO` 可选择 Go 可执行文件，显式 `GOROOT` 必须与它匹配，`CC` 选择编译器。
 
 ```sh
 python3 tests/native.py --expected-platform linux/amd64
 ```
 
-Supported native targets are `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, and `windows/amd64`. The runner checks host and target OS/architecture and rejects cross-compilation. `CC` selects a compiler executable; `--cc-version` requires a substring in its version output. `--output` selects the evidence directory (default: `artifacts/native`).
+平台参数必须匹配实际主机与目标：`linux/amd64`、`linux/arm64`、`darwin/amd64`、`darwin/arm64` 或 `windows/amd64`。runner 拒绝交叉编译；`--cc-version` 校验编译器版本子串，`--output` 选择输出目录，默认 `artifacts/native`。
 
-The runner creates a content-addressed local module proxy, builds an independent consumer without replace directives, and runs all ten suites: `source`, `edit`, `yaml`, `audit`, `budget`, `retention`, `resume`, `resources`, `index`, and `workspace`. The exact set of suite names must be present; every suite must contain assertions and pass. Unknown consumer stages fail instead of falling back to a different suite. Missing tools, compilation failures, timeouts, and failed assertions produce a report and nonzero exit status.
+[`native.py`](native.py) 创建内容寻址的本地 module proxy，在无 replace 的独立模块中构建消费者，必须完整运行以下十个非空套件且全部通过：`source`、`edit`、`yaml`、`audit`、`budget`、`retention`、`resume`、`resources`、`index`、`workspace`。未知阶段、缺少工具、编译失败、超时或断言失败均不能产生成功报告。
 
-The [native CI workflow](../.github/workflows/native.yml) runs the same entry point on five native runners. Its pinned Go, Python, Actions, and accepted C compiler versions are defined in the workflow. GitHub runner images change over time; evidence records their image versions rather than claiming bit-identical images.
+可加 `--source-commit <完整提交>`，要求所有打包运行文件逐字节匹配该提交的原始 Git 对象；无 Git 元数据、提交不存在或字节不同均失败。默认入口验证当前工作区，也支持无 Git 元数据的源码包。[原生 CI](../.github/workflows/native.yml)在五个平台使用同一入口并传入实际提交；runner image 和工具链写入报告。
 
-The optional `--source-commit <commit>` requires every packaged runtime file to match the raw Git object in that commit. CI passes its exact source commit. Reports record the commit and both object IDs; missing Git metadata, an unavailable commit, or any byte difference fails verification. Default runs consume the current working tree, including uncommitted edits, and source archives without Git remain supported. `.gitattributes` fixes text files to LF so the same commit produces identical snapshot and contract identities on every native platform.
+## 按模块验证
 
-The checkout E2E exercises this behavior with two real temporary Git checkouts, `core.autocrlf=false` and `true`. Both package the public module and run all ten native consumer suites. Both request explicit commit verification. The temporary fixture includes tracked and nonignored untracked candidate files, without changing the caller's Git index. Expected bytes come directly from the temporary commit's Git blobs, independently of the snapshot packager. Additional cases consume an uncommitted runtime edit through the default entry point and reject explicit verification with a missing commit or missing Git metadata:
+| 阶段与主要输入 | 验证的行为 |
+|---|---|
+| `source`、`edit`；[`main.go`](consumer/main.go) | UTF-8/UTF-16/CRLF 坐标、顺序输入变化、基础 revision、原文与重叠校验 |
+| `yaml`、`audit`；[`yaml.go`](consumer/yaml.go)、[`audit.go`](consumer/audit.go) | YAML 结构、损坏恢复、重复键、alias/merge 的保留与位置 |
+| `budget`、`resume`；[`budget.go`](consumer/budget.go)、[`resume.go`](consumer/resume.go) | 输入/文档/深度边界、scanner 序列化、分片恢复及取消 |
+| `retention`、`resources`；[`retention.go`](consumer/retention.go)、[`main.go`](consumer/main.go) | 成功/错误/取消后的 context 持有、原生对象释放和 RSS 增长 |
+| `index`；[`index.go`](consumer/index.go)、[`relations.go`](consumer/relations.go)、[`reuse.go`](consumer/reuse.go) | 票据时效、缺失目标、候选歧义、位置与语义失效、scope、容量、摘要所有权、查询与复用分配 |
+| `workspace`；[`workspace.go`](consumer/workspace.go)、[`coordination.go`](consumer/coordination.go)、[`workqueue.go`](consumer/workqueue.go) | 打开缓冲区、读取消、通知合并、公平性、执行预约、扫描优先与续扫、完成度和对账 |
 
-```sh
-python3 tests/checkout_e2e.py
-python3 tests/snapshot_e2e.py
-```
-
-Run this entry point on Linux amd64. It saves the exact source archive, Git settings and commands, module/contract identities, byte comparisons, and native consumer reports under `artifacts/checkout/`. `--output` chooses another evidence directory. `--without-attributes` removes the checkout policy only in the temporary source fixture; this deliberate counterexample must fail the byte-identity checks. It never changes the caller's Git index or configuration.
-
-`snapshot_e2e.py` compares complete module ZIP bytes from the real snapshot CLI under native defaults and isolated subprocesses reproducing the ZIP constructor default and path ordering observed on Windows, plus an alternate valid deflate strategy. It retains all outputs and exact inputs under `artifacts/snapshot/`. This environment experiment is not native Windows acceptance. The CI matrix must also produce the same source, contract, version, and ZIP digests on all five platforms. ZIP creator metadata is fixed to Unix to match the archive's existing Unix permission bits, and entries are ordered by relative POSIX path strings independently of host filesystem path comparison. Module ZIP entries are stored without compression so different deflate implementations cannot change their bytes. Packaging changes require a fresh proxy directory and explicit consumer ZIP-lock updates; existing same-version proxy bytes are never overwritten.
-
-## Individual suites and ablations
+选择需要的阶段运行，例如：
 
 ```sh
-python3 tests/e2e.py source
-python3 tests/e2e.py edit
-python3 tests/e2e.py yaml
-python3 tests/e2e.py audit
-python3 tests/e2e.py budget
-python3 tests/e2e.py retention
-python3 tests/e2e.py resume
-python3 tests/e2e.py resources
 python3 tests/e2e.py index
 python3 tests/e2e.py workspace
-python3 tests/ablate.py
-python3 tests/ablate.py resources
-python3 tests/ablate.py retention
+python3 tests/e2e.py retention
 GOFLAGS=-race python3 tests/e2e.py index-race
 GOFLAGS=-race python3 tests/e2e.py workspace-race
 ```
 
-These consumers use a temporary independent Go module and local replace directive; the distributed `go.mod` contains no local paths. Ablations run modified copies and require a successful build plus the designated behavior assertion failing. A compilation failure does not count as detecting a missing guard.
+`e2e.py` 使用临时独立 Go 模块和本地 replace；仓库交付的 `go.mod` 不包含本机路径。无 replace 的消费验证以 `native.py` 和下述 delivery 入口为准。
 
-The suites cover text coordinates and atomic edits; YAML structure, recovery, duplicate keys, aliases, and merges; the 256-level and 2,000-document boundaries; deep indentation and scanner recovery; cancellation; and resource lifetimes. `resume` checks the order and raw values of 8,000 key/value pairs and a one-second deadline on 70,000 comments.
+查询分配测试用大量符号与小结果上限检测 collect-all 实现；存储测试用大输入的短字符串切片检测全文持有；扫描用例先推进大后台目录，再提升当前目录，检查有界批次内的响应以及最终不漏不重。Application/AppProject 和 Workflow/WorkflowTemplate fixture 的 Argo 提取逻辑位于测试消费者，不进入公共库。
 
-`index` checks real consumer sequences through the public API: stale, replayed, deleted/recreated and cross-instance tickets; missing-target dependencies; definition additions, duplicates, moves and removals; position-only changes versus changed meaning; pending-location withdrawal; opaque scope/key separation; bounded symbol search; immutable input/output ownership; invalid facts; and recoverable capacity failures. Fixed Application/AppProject and Workflow/WorkflowTemplate YAML fixtures are parsed through `source` and `yamlview` into caller-owned facts. They demonstrate the same mechanism in both consumers without adding Argo rules to the toolkit. A separate concurrent scenario checks that `GetFile` never mixes a revision with another commit's facts. The race-enabled command above runs this independent consumer with the actual Go race detector; `GOFLAGS`, toolchain and compiler selection are recorded in its report.
+资源阈值属于可复现实验条件，不是新增 API 配额或“没有任何泄漏”的证明。RSS 在 Linux 使用 `/proc/self/status` 的 VmRSS，macOS 使用 `ps`，Windows 使用 `GetProcessMemoryInfo` 的 WorkingSetSize；测量失败必须使验证失败，不能以 Go heap 替代原生 RSS。
 
-Symbol search checks a literal expected order across files, span coordinates and IDs, several result limits, pending-file withdrawal, scope separation and explicit truncation. A separate 20,000-symbol input measures four queries with limit 10 after setup and warmup. Total query allocation must stay below a deliberately generous 1 MiB threshold, catching an implementation that collects every match before truncating. This is a temporary-allocation check, not a latency or process RSS limit.
-
-The summary retention case keeps 16 tiny symbol names sliced from independent 1 MiB strings. The index must retain usable summaries without keeping those entire backing strings alive. It checks Go heap growth after collection against an 8 MiB experimental threshold. This is a specific retained-input check, not an RSS limit or proof of absence of every leak.
-
-The second design ablation removes the unreleased `Symbol.Parent` and `Reference.From` requirements. The old missing-parent, parent-cycle and unknown-reference-owner rejection/recovery cases are intentionally removed; they no longer describe the contract. Reference-only Application/Workflow fixtures now verify direct admission, unresolved uses, target arrival/removal, exact navigation spans, and bounded symbol search without synthetic declarations. These are syntax-complete fixtures with no named caller declaration, not a claim that damaged YAML or all Argo rules have been handled. The paired historical experiment uses the same YAML and 44 business assertions with explicit old/new adapters; it does not claim source or behavior compatibility for the removed tree API.
-
-`workspace` exercises authoritative unsaved buffers, read-ticket revocation, close/reopen, byte and entry budgets, queue coalescing and priority promotion, and foreground/background fairness. A real directory fixture contains 800 YAML and 800 ordinary files. Discovery processes at least 512 work units before a newly requested current-file directory is prioritized; the current file must arrive within a two-unit batch, and the interrupted scan must resume without duplicate or lost candidates. A generous total-work bound excludes restarting the already processed prefix. Additional lifecycle cases cover overlapping roots, cancellation during a batch, priority upgrades of active and paused directories, and prioritizing directories after either successful or failed enumeration without starting a second pass. Symlink roots and children, exclusions, malformed options, missing directories and directory-capacity exhaustion have explicit assertions. Evidence records work counts, candidate counts, disk-read counts and queue service counts. A Windows host unable to create symlinks records that limitation separately; it does not claim that branch was exercised.
-
-Queue requirements were narrowed during design ablation: jobs carry only URI and priority; rejecting an older caller-assigned queue generation is no longer part of the API. The corresponding old assertion and `workspace-generation` mutant were replaced by URI-coalescing assertions and `workspace-coalescing`. This is an intentional contract change, not equivalence to every behavior of the former API. The queue fixtures use named URI/Priority fields, so the same input also compiles against the earlier Job structure for comparison of the retained requirements.
-
-The combined coordinator consumer retains the latest accepted snapshot and original index ticket while work is queued or running. It adds no generation map or replacement clock. Pending and running edits, late URI notifications, deletion/reopen, stale worker completion and input release are exercised in a deterministic event order. A worker always completes with its original ticket; input release compares the accepted input object's identity, without assuming opaque tickets support equality. Notifications for completed or removed inputs cannot recreate work. These sequences, queue capacity/promotion/fairness, and scanner lifecycle checks preserve the 30 behavioral scenarios used in the independent design experiment. The workspace race-enabled run executes the same consumer, but the coordinator scenarios themselves are serial event sequences, not evidence about a concurrent editor integration.
-
-The disk-read consumer opens and closes the file explicitly and reads at most the configured byte limit plus one byte before publishing. Failed or cancelled workers call `DiscardRead(ticket)`: a superseded worker cannot revoke the newer read for the same URI. Separate scenarios check that cancelling the current read frees its entry budget, repeated and cross-store cancellation leave valid reads intact, and an unsaved overlay survives cleanup. Missing-file, cancelled-context and oversized-file paths exercise this cleanup through the actual bounded-read helper. `Invalidate(uri)` is reserved for authoritative filesystem events or coordinator decisions.
-
-These are library consumers. They do not prove large-workspace LSP completion, complete Argo semantics, editor protocol behavior or real Zed interaction. Those remain acceptance tests of the language servers that use the toolkit.
-
-The new buildable counterexamples can be run independently of the existing parser/resource ablations:
+## 可编译的故障注入
 
 ```sh
-python3 tests/ablate.py index-ticket index-missing index-position index-fresh index-retention
-python3 tests/ablate.py index-reuse
-python3 tests/ablate.py workspace-overlay workspace-ticket workspace-coalescing workspace-fairness
-python3 tests/ablate.py workspace-discard
-python3 tests/ablate.py workspace-priority workspace-complete workspace-filter
+python3 tests/ablate.py
+python3 tests/ablate.py index-ticket index-reuse index-retention
 python3 tests/ablate.py workspace-workqueue-fairness workspace-workqueue-followup workspace-membership-complete
+python3 tests/ablate.py resources retention
 ```
 
-The lifecycle consumers also exercise the actual WorkQueue API with ready
-capacities one and two, preserving 8:4:1 service across overflow; a running
-notification followed by another update; removed/recreated inputs; foreign and
-replayed completions; bounded retired executions; coalesced worker wakeups; and
-four concurrent producers and four workers. Every URI's final accepted version
-must be processed without simultaneous execution for that URI. Membership cases
-cover watcher observations in already scanned directories, incomplete passes,
-superseded sweeps, and cross-instance tokens. OpenBytes checks accepted changes,
-refusals, and close accounting in the existing input lifecycle scenarios.
+[`ablate.py`](ablate.py) 在隔离的运行源码副本中只去掉一项相关防线，再编译相同独立消费者。必须成功编译并使指定行为断言失败；崩溃、编译错误、超时或无关断言失败不算检出。脚本支持的 variant 名称以其 `variants` 列表为准。
 
-Index reuse cases preserve hidden pending locations, new revisions, original
-reverse dependencies, same-scope ownership, and ticket rejection. Four reuses of
-a 20,000-symbol summary must allocate less than 1 MiB after setup, detecting a
-replacement that clones the retained summary on every reuse. The reuse mutation
-removes the scope check and must fail its independently specified scope-refusal
-assertion. The three work/membership mutations remove overflow fairness,
-completion-time follow-up retention, and complete-scan deletion protection.
+这种验证证明测试能识别指定错误，不自动证明某个更简单的完整设计不可行。已有完整设计替代实验留下的规则见[经验教训](../docs/lessons-learned.md#3-代码更短仍可能破坏资源上界或当前目录响应)。
 
-Each counterexample removes one relevant guard in an isolated runtime copy, compiles the same independent consumer, and must fail its designated behavior assertion. The expected failures cover stale commits, newly satisfied references, positional invalidation, stale navigation, retained source storage, authoritative overlays, disk read generations, ticket-scoped cancellation, URI coalescing/fairness, current-directory priority, honest completeness and candidate filtering. `workspace-coalescing` bypasses existing-URI membership and must fail `queue-coalesces-uri`; its source remains buildable. `workspace-discard` removes only the read-generation comparison from `DiscardRead`; its compiled consumer must fail `cancelled-old-read-keeps-new-ticket`. A crash, compilation failure, timeout or unrelated assertion does not count as detecting the counterexample.
+## Checkout、源码快照与 vendor
 
-`retention` exercises 96 independent 1 MiB context values for each success, depth-error, and cancellation path, checking finalizers and an 8 MiB retention threshold. `resources` measures resident memory after warmup and 2,000 larger parses, with a 64 MiB growth threshold. These experimental thresholds are not additional API limits and do not prove the absence of all leaks.
+```sh
+python3 tests/checkout_e2e.py
+python3 tests/snapshot_e2e.py
+python3 tests/vendor_e2e.py
+```
 
-Resident memory is measured through Linux `/proc/self/status` VmRSS, macOS `ps -o rss=` (KiB converted to bytes), or Windows `GetProcessMemoryInfo` WorkingSetSize (bytes). A failed measurement fails the assertion; Go heap allocation is not a substitute for native resident memory.
+[`checkout_e2e.py`](checkout_e2e.py) 用真实临时 checkout 比较 `core.autocrlf` 两种配置，期望字节来自 Git blob；另外检查默认入口接受工作区修改、显式提交验证拒绝无效来源。`--without-attributes` 只在临时 fixture 移除换行策略，作为必须失败的反例，不修改调用者 Git 配置。
 
-## Independent snapshots and delivery failure checks
+[`snapshot_e2e.py`](snapshot_e2e.py) 比较完整 module ZIP，覆盖 ZIP 默认元数据、路径排序和有效 deflate 差异。打包器固定 Unix creator、相对 POSIX 路径顺序及不压缩存储，拒绝覆盖同版本不同字节。这个环境实验不替代原生 Windows 验证；包装字节改变后使用新的 proxy 目录，并显式更新消费者 ZIP 锁。
+
+[`vendor_e2e.py`](vendor_e2e.py) 验证标准 Go vendor 与原生 include/头文件的交付边界。消费者应补齐 grammar 的 `tree_sitter` 头文件以及 go-tree-sitter 的 `include`/`src`，同时保留来源及许可资料。
+
+## 独立交付与失败路径
 
 ```sh
 python3 tools/snapshot.py --output ./artifacts/module-proxy
@@ -115,16 +79,16 @@ python3 tests/native_delivery_e2e.py
 python3 tests/delivery_failures_e2e.py
 ```
 
-`snapshot.py` packages the public runtime sources, API contract, C includes and headers, provenance, and licenses. It rejects different bytes for an existing version and writes `manifest.json`. It does not publish a module.
+[`snapshot.py`](../tools/snapshot.py) 打包公共运行源码、合同、原生 includes/headers、来源和许可，写入 `manifest.json`，不发布 module。运行 [`delivery.py`](delivery.py) 前，将 `GOMODCACHE` 设为可写绝对路径，并用正常的 `go mod download` 填充依赖缓存。
 
-Before `delivery.py`, set `GOMODCACHE` to a writable absolute path and populate its download cache with `go mod download`. The script collects dependencies locked by `go.sum`, including their real `.info` metadata, and builds a consumer with a fresh module cache, only a file proxy, `GOSUMDB=off`, `GOWORK=off`, and no replace directive. It runs seven delivery suites (`source`, `edit`, `yaml`, `audit`, `resources`, `index`, and `workspace`) without reading sibling repositories. An incomplete download cache must be populated through the normal Go download mechanism; metadata must not be fabricated.
+delivery 从 `go.sum` 锁定的真实下载缓存取得依赖及 `.info`，使用全新 module cache、仅文件代理、`GOSUMDB=off`、`GOWORK=off` 和无 replace 的独立消费者。它运行 `source`、`edit`、`yaml`、`audit`、`resources`、`index`、`workspace` 七个交付套件，不读取相邻仓库；缓存缺失应正常下载，不能伪造 metadata。
 
-On Linux, `native_delivery_e2e.py` runs an isolated copy without parent or sibling sources and checks that empty suites, failed intermediate RSS reads, a wrong platform, and a missing compiler fail. `delivery_failures_e2e.py` verifies that missing Go or C tools, corrupt child reports, and timeouts cannot reuse a previous green report. It also removes the RSS all-samples guard in an isolated variant and requires the failure scenario to detect that buildable variant.
+`native_delivery_e2e.py` 在 Linux 检查隔离源码、空套件、RSS 中间采样失败、平台不符及缺失编译器；`delivery_failures_e2e.py` 检查缺失工具、损坏子报告和超时不能复用旧成功报告，也验证移除 RSS 全样本检查后能检出该反例。
 
-## Evidence format
+## 输出与结论范围
 
-Reports include commands, tool versions, environment, source and input hashes, independently specified expectations and assertion results, binary hashes, real stdout/stderr, and exit codes. Input ZIPs preserve the exact consumer and modified sources; binaries are retained under their SHA-256. Failure reports and earlier runs are preserved. Zero assertions, missing reports, and empty success entry points do not pass.
+输出位于忽略的 `artifacts/`：普通套件为 `<stage>/report.json`，反例为 `<stage>-ablation/report.json`；独立入口默认使用 `native`、`delivery`、`checkout`、`snapshot`、`vendor-probe`、`native-delivery`、`delivery-failures` 子目录。`consumer/` 和各验证脚本是仓库中的持久输入，运行报告和二进制不作为文档提交。
 
-Native evidence also includes the module ZIP and manifest, consumer `go.mod`/`go.sum`, dependency manifests, runner image information, and the applicable MIT, Unicode, and Go BSD licenses. Compiler and SDK binaries are not redistributed. These artifacts are verification evidence, not a released SDK or product installer.
+报告记录命令、环境、工具版本、源码/输入/二进制 hash、期望与断言、stdout/stderr 和退出码；原生报告还包含 module ZIP、manifest、消费者 go.mod/go.sum 与适用许可。零断言、缺报告和空成功入口不通过。
 
-All evidence is generated locally under ignored `artifacts/` paths. Individual suites write `<stage>/report.json`; ablations write `<stage>-ablation/report.json`. Other default directories are `delivery`, `vendor-probe`, `native`, `native-delivery`, and `delivery-failures`. Source checkouts contain the durable inputs and expectations in `tests/consumer/`, not historical reports or binaries. Native consumer verification does not establish real Zed acceptance; each platform requires its own actual run.
+本仓验证公共机制及其源码交付。业务资源识别、跨文件跳转、LSP 发布时序、真实编辑器启动时长，由 Argo CD 和 Workflows 仓库各自验证。
