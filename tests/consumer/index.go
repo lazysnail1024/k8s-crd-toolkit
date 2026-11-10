@@ -26,6 +26,7 @@ func indexCases() {
 	indexLimitCases()
 	indexRetentionCase()
 	relationCases()
+	referenceOnlyCases()
 	indexConcurrencyCases()
 }
 
@@ -52,7 +53,7 @@ func definitionFacts(key index.Key, semantic string, offset int) index.Facts {
 
 func referenceFacts(key index.Key, offset int) index.Facts {
 	f := definitionFacts("caller", "caller-signature", offset)
-	f.References = []index.Reference{{Target: key, From: "root", Span: source.Span{Start: offset + 10, End: offset + 14}}}
+	f.References = []index.Reference{{Target: key, Span: source.Span{Start: offset + 10, End: offset + 14}}}
 	return f
 }
 
@@ -367,8 +368,8 @@ func indexCopyCases() {
 	check("reference-query-isolated", len(uses) == 1 && uses[0].Reference.Target == "target")
 
 	facts = referenceFacts("target", 0)
-	facts.Symbols = append(facts.Symbols, index.Symbol{ID: "child", Parent: "root", Key: "child", Name: "child", Span: source.Span{Start: 4, End: 8}, Selection: source.Span{Start: 4, End: 8}})
-	facts.References = append(facts.References, index.Reference{Target: "another", From: "child", Span: source.Span{Start: 5, End: 6}})
+	facts.Symbols = append(facts.Symbols, index.Symbol{ID: "child", Key: "child", Name: "child", Span: source.Span{Start: 4, End: 8}, Selection: source.Span{Start: 4, End: 8}})
+	facts.References = append(facts.References, index.Reference{Target: "another", Span: source.Span{Start: 5, End: 6}})
 	facts.Dependencies = []index.Key{"alpha", "beta"}
 	_, err = commitIndexFile(i, "file:///order.yaml", "scope", 1, facts)
 	check("order-baseline", err == nil)
@@ -393,12 +394,9 @@ func indexInputCases() {
 		{"empty-symbol-id", func(f *index.Facts) { f.Symbols[0].ID = "" }},
 		{"empty-symbol-key", func(f *index.Facts) { f.Symbols[0].Key = "" }},
 		{"duplicate-symbol-id", func(f *index.Facts) { f.Symbols = append(f.Symbols, f.Symbols[0]) }},
-		{"missing-parent", func(f *index.Facts) { f.Symbols[0].Parent = "absent" }},
-		{"parent-cycle", func(f *index.Facts) { f.Symbols[0].Parent = "root" }},
 		{"negative-span", func(f *index.Facts) { f.Symbols[0].Span.Start = -1 }},
 		{"reversed-span", func(f *index.Facts) { f.Symbols[0].Span.End = -1 }},
 		{"selection-outside-span", func(f *index.Facts) { f.Symbols[0].Selection.End = 21 }},
-		{"unknown-reference-source", func(f *index.Facts) { f.References[0].From = "absent" }},
 		{"empty-reference-target", func(f *index.Facts) { f.References[0].Target = "" }},
 		{"negative-reference-span", func(f *index.Facts) { f.References[0].Span.Start = -1 }},
 		{"empty-dependency-key", func(f *index.Facts) { f.Dependencies = []index.Key{""} }},

@@ -81,10 +81,7 @@ func (i *Index) References(scope Scope, key Key) ([]Use, State) {
 		if x.URI != y.URI {
 			return x.URI < y.URI
 		}
-		if x.Reference.Span != y.Reference.Span {
-			return spanLess(x.Reference.Span, y.Reference.Span)
-		}
-		return x.Reference.From < y.Reference.From
+		return spanLess(x.Reference.Span, y.Reference.Span)
 	})
 	return result, i.state(scope)
 }

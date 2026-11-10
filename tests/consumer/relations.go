@@ -81,6 +81,23 @@ spec:
         image: "{{inputs.parameters.image}}"
 `
 
+const applicationReferenceOnlyYAML = `apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  namespace: argocd
+spec:
+  project: platform
+`
+
+const workflowReferenceOnlyYAML = `apiVersion: argoproj.io/v1alpha1
+kind: Workflow
+metadata:
+  namespace: ci
+spec:
+  workflowTemplateRef:
+    name: shared
+`
+
 type relationInput struct {
 	snapshot source.Snapshot
 	facts    index.Facts
@@ -135,7 +152,7 @@ func parseRelation(uri source.URI, text string, revision source.Revision) (relat
 		if project.Raw() == "" {
 			return relationInput{}, fmt.Errorf("fixture project is missing")
 		}
-		facts.References = []index.Reference{{Target: relationKey("AppProject", namespace, project.Raw()), From: "resource", Span: project.Span()}}
+		facts.References = []index.Reference{{Target: relationKey("AppProject", namespace, project.Raw()), Span: project.Span()}}
 		semantic += "\x00" + project.Raw()
 	case "AppProject":
 	case "Workflow", "WorkflowTemplate":
@@ -162,7 +179,7 @@ func relationTemplate(root yamlview.Node, kind, namespace, resource string, fact
 		return "", fmt.Errorf("fixture template name is missing")
 	}
 	key := relationKey(kind+"/template", namespace, resource+"/"+name.Raw())
-	facts.Symbols = append(facts.Symbols, index.Symbol{ID: "template", Parent: "resource", Key: key, Name: name.Raw(), Kind: "template", Span: template.Span(), Selection: name.Span()})
+	facts.Symbols = append(facts.Symbols, index.Symbol{ID: "template", Key: key, Name: name.Raw(), Kind: "template", Span: template.Span(), Selection: name.Span()})
 	if kind == "WorkflowTemplate" {
 		return name.Raw() + "\x00" + relationParameterNames(template, "inputs") + "\x00" + relationParameterNames(template, "outputs"), nil
 	}
@@ -176,8 +193,8 @@ func relationTemplate(root yamlview.Node, kind, namespace, resource string, fact
 		return "", fmt.Errorf("fixture template reference is missing")
 	}
 	facts.References = []index.Reference{
-		{Target: relationKey("WorkflowTemplate", namespace, resourceName.Raw()), From: "template", Span: resourceName.Span()},
-		{Target: relationKey("WorkflowTemplate/template", namespace, resourceName.Raw()+"/"+templateName.Raw()), From: "template", Span: templateName.Span()},
+		{Target: relationKey("WorkflowTemplate", namespace, resourceName.Raw()), Span: resourceName.Span()},
+		{Target: relationKey("WorkflowTemplate/template", namespace, resourceName.Raw()+"/"+templateName.Raw()), Span: templateName.Span()},
 	}
 	return name.Raw() + "\x00" + resourceName.Raw() + "\x00" + templateName.Raw(), nil
 }
@@ -220,6 +237,85 @@ func relationCases() {
 		definitions, _ := i.Definitions("fixture-partition", fixture.key)
 		dependents, _ := i.Dependents("fixture-partition", fixture.key)
 		check(fixture.name+"-target-delete-restores-unresolved", err == nil && len(definitions) == 0 && exactAffected(change, caller.snapshot.URI(), definition.snapshot.URI()) && reflect.DeepEqual(dependents, []source.URI{caller.snapshot.URI()}))
+	}
+}
+
+// These editor drafts have an exact navigable use but no declaration name.
+// No owner symbol is invented merely to store the reference.
+func parseReferenceOnlyFixture(uri source.URI, text string, revision source.Revision) (relationInput, error) {
+	snapshot, err := source.New(uri, revision, text)
+	if err != nil {
+		return relationInput{}, err
+	}
+	view, err := yamlview.Parse(context.Background(), snapshot)
+	if err != nil {
+		return relationInput{}, err
+	}
+	documents := view.Documents()
+	if len(documents) != 1 || !documents[0].Complete() {
+		return relationInput{}, fmt.Errorf("reference fixture must be syntactically complete")
+	}
+	root := documents[0].Root()
+	namespace := relationNode(root, "metadata", "namespace").Raw()
+	if namespace == "" || relationNode(root, "metadata", "name").Raw() != "" || len(relationNode(root, "spec", "templates").Elements()) != 0 {
+		return relationInput{}, fmt.Errorf("reference fixture must have no named declarations")
+	}
+	var targetKind string
+	var use yamlview.Node
+	switch relationNode(root, "kind").Raw() {
+	case "Application":
+		targetKind, use = "AppProject", relationNode(root, "spec", "project")
+	case "Workflow":
+		targetKind, use = "WorkflowTemplate", relationNode(root, "spec", "workflowTemplateRef", "name")
+	default:
+		return relationInput{}, fmt.Errorf("unsupported reference-only fixture")
+	}
+	if use.Raw() == "" {
+		return relationInput{}, fmt.Errorf("reference fixture must contain a use")
+	}
+	target := relationKey(targetKind, namespace, use.Raw())
+	facts := index.Facts{SemanticDigest: sha256.Sum256([]byte(target)), References: []index.Reference{{Target: target, Span: use.Span()}}}
+	return relationInput{snapshot, facts}, nil
+}
+
+func referenceOnlyCases() {
+	for _, fixture := range []struct {
+		name, text, definition, expected string
+		key                              index.Key
+	}{
+		{"cd-reference-only", applicationReferenceOnlyYAML, projectRelationYAML, "platform", relationKey("AppProject", "argocd", "platform")},
+		{"wf-reference-only", workflowReferenceOnlyYAML, templateRelationYAML, "shared", relationKey("WorkflowTemplate", "ci", "shared")},
+	} {
+		caller, callerErr := parseReferenceOnlyFixture(source.URI("file:///"+fixture.name+"-caller.yaml"), fixture.text, 1)
+		definition, definitionErr := parseRelation(source.URI("file:///"+fixture.name+"-definition.yaml"), fixture.definition, 1)
+		check(fixture.name+"-fixture-parsed", callerErr == nil && definitionErr == nil && len(caller.facts.Symbols) == 0 && len(caller.facts.References) == 1)
+		if callerErr != nil || definitionErr != nil {
+			continue
+		}
+		i := generousIndex(fixture.name)
+		if i == nil {
+			continue
+		}
+		relationLifecycle(i, fixture.name, caller, definition, fixture.key, fixture.expected)
+		file, found, _ := i.GetFile(caller.snapshot.URI())
+		symbols, err := i.Symbols("fixture-partition", "", 1)
+		check(fixture.name+"-no-synthetic-owner-in-symbol-search", found && file.Fresh && len(file.Facts.Symbols) == 0 && err == nil && len(symbols.Items) == 1 && symbols.Items[0].URI == definition.snapshot.URI() && symbols.Items[0].Symbol.Name == fixture.expected && symbols.Truncated == (len(definition.facts.Symbols) > 1))
+		shifted, err := parseReferenceOnlyFixture(caller.snapshot.URI(), "# editor comment\n"+fixture.text, 2)
+		check(fixture.name+"-comment-fixture-parsed", err == nil)
+		if err != nil {
+			continue
+		}
+		change, err := putRelation(i, shifted)
+		uses, _ := i.References("fixture-partition", fixture.key)
+		check(fixture.name+"-position-refresh-remains-local", err == nil && !change.SemanticChanged && exactAffected(change, caller.snapshot.URI()) && len(uses) == 1 && uses[0].Revision == 2 && relationSlice(shifted.snapshot, uses[0].Reference.Span, fixture.expected))
+		change, err = i.Remove(definition.snapshot.URI())
+		definitions, _ := i.Definitions("fixture-partition", fixture.key)
+		dependents, _ := i.Dependents("fixture-partition", fixture.key)
+		check(fixture.name+"-target-delete-keeps-unresolved-use", err == nil && len(definitions) == 0 && exactAffected(change, caller.snapshot.URI(), definition.snapshot.URI()) && reflect.DeepEqual(dependents, []source.URI{caller.snapshot.URI()}))
+		_, err = i.Remove(caller.snapshot.URI())
+		uses, _ = i.References("fixture-partition", fixture.key)
+		dependents, _ = i.Dependents("fixture-partition", fixture.key)
+		check(fixture.name+"-caller-delete-removes-use", err == nil && len(uses) == 0 && len(dependents) == 0)
 	}
 }
 
@@ -283,7 +379,7 @@ func concurrentFacts(revision source.Revision) index.Facts {
 	label := strconv.FormatUint(uint64(revision), 10)
 	facts := definitionFacts("concurrent", label, int(revision))
 	facts.Symbols[0].Name = label
-	facts.References = []index.Reference{{Target: index.Key("target-" + label), From: "root", Span: source.Span{Start: int(revision) + 10, End: int(revision) + 14}}}
+	facts.References = []index.Reference{{Target: index.Key("target-" + label), Span: source.Span{Start: int(revision) + 10, End: int(revision) + 14}}}
 	facts.Dependencies = []index.Key{index.Key("dependency-" + label)}
 	return facts
 }

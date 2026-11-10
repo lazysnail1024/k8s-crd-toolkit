@@ -1,5 +1,10 @@
 # Design ablation of the workspace index
 
+This document preserves two experiment rounds. The first reduces duplicate
+state; the [second](#second-round-flat-facts-and-shorter-scanner-lifetimes)
+removes the shared symbol-tree requirement and shortens scanner object lifetimes.
+Counts and API comparisons belong to their named source revisions.
+
 The 2026-11-10 experiment starts from commit
 [`3121b84aa4ce5f63588ba5f2083ce3e80f71cdf7`](https://github.com/lazysnail1024/k8s-crd-toolkit/commit/3121b84aa4ce5f63588ba5f2083ce3e80f71cdf7),
 the first implementation of the proposed, unreleased `toolkit-design-2`
@@ -165,8 +170,8 @@ domain callback interface, or global configuration system. None was added.
 
 ## Reproduction and regression gates
 
-Run the current public consumer against both runtimes using the existing runner.
-The final shared consumer passed **163/163 index** and **192/192 workspace**
+Run the first-round public consumer against both historical runtimes using the
+existing runner. That consumer passed **163/163 index** and **192/192 workspace**
 assertions against each. The workspace total includes the 30 requirement cases
 and nine setup assertions added to the prior 153-assertion suite. The Queue tests
 use named URI/Priority fields so the same source compiles against either API;
@@ -175,29 +180,179 @@ rejection contract.
 
 ```sh
 baseline_dir=$(mktemp -d)
+round1_dir=$(mktemp -d)
 git archive 3121b84aa4ce5f63588ba5f2083ce3e80f71cdf7 | tar -x -C "$baseline_dir"
-python3 tests/e2e.py index-design-baseline "$baseline_dir"
-python3 tests/e2e.py workspace-design-baseline "$baseline_dir"
-python3 tests/e2e.py index-design-final
-python3 tests/e2e.py workspace-design-final
+git archive 34f0d2c6afad203bfc3768b94f5b621a70ed4a26 | tar -x -C "$round1_dir"
+(cd "$round1_dir" && python3 tests/e2e.py index-design-baseline "$baseline_dir")
+(cd "$round1_dir" && python3 tests/e2e.py workspace-design-baseline "$baseline_dir")
+(cd "$round1_dir" && python3 tests/e2e.py index-design-final)
+(cd "$round1_dir" && python3 tests/e2e.py workspace-design-final)
 ```
 
 The two small cost probes are retained as ordinary public-API programs, without
-a new benchmark framework. To compare the final runtime and baseline with the
+a new benchmark framework. To compare the first-round runtime and baseline with the
 same probes:
 
 ```sh
-GOMAXPROCS=4 go run ./tests/probes/index-scope 50000
-GOMAXPROCS=4 go run ./tests/probes/index-query 50000 10 8
-cp -R tests/probes "$baseline_dir/tests/probes"
+(cd "$round1_dir" && GOMAXPROCS=4 go run ./tests/probes/index-scope 50000)
+(cd "$round1_dir" && GOMAXPROCS=4 go run ./tests/probes/index-query 50000 10 8)
+cp -R "$round1_dir/tests/probes" "$baseline_dir/tests/probes"
 (cd "$baseline_dir" && GOMAXPROCS=4 go run ./tests/probes/index-scope 50000)
 (cd "$baseline_dir" && GOMAXPROCS=4 go run ./tests/probes/index-query 50000 10 8)
 ```
 
 Repeat in fresh processes for medians. The single-change variants above are
 historical design experiments; these commands compare the frozen baseline with
-the adopted combined runtime. The regression consumer retains the requirements
+the first-round combined runtime. The regression consumer retains the requirements
 that made the choices consequential. [tests/README.md](../tests/README.md)
 documents native, isolated delivery, race, and buildable guard-mutation checks.
 Those checks establish library behavior on tested platforms, not adoption by
 either language server or real editor startup latency.
+
+## Second round: flat facts and shorter scanner lifetimes
+
+The second round fixes its baseline at
+[`34f0d2c6afad203bfc3768b94f5b621a70ed4a26`](https://github.com/lazysnail1024/k8s-crd-toolkit/commit/34f0d2c6afad203bfc3768b94f5b621a70ed4a26).
+It tests whether the model and retained objects can shrink, as well as whether
+whole data structures have simpler viable replacements. Common file state,
+incremental indexing and foreground scheduling remain requirements. A shared
+call tree is not needed to locate a definition or find referring files.
+
+| Candidate actually implemented | Decision | Reason |
+|---|---|---|
+| Flat facts without Symbol.Parent / Reference.From | Adopt | Removes a forced symbol tree and synthetic declarations for reference-only files; navigation and invalidation still work. |
+| Scanner remembers completed identities without retaining work objects | Adopt | Removes the work-to-list backpointer and releases completed work without adding consumer state. |
+| One slice instead of Queue's lists and URI map | Reject | Same behavior, but linear lookup and shifting degrade foreground operations as pending work grows. |
+| One outer bucket map for both definition and dependency postings | Reject | Saves memory for dense dual-role keys, increases memory for sparse keys, and adds role dispatch. |
+| A separately allocated capability object for each Begin | Reject | Still needs the generation counter and adds one allocation per Begin; no consumer responsibility disappears. |
+
+### Remove the compulsory symbol tree
+
+The old model required every Reference.From to identify a local Symbol. A file
+containing a target reference without a named declaration could not be submitted
+directly. A consumer had to manufacture an owner symbol, choose a reserved ID/key,
+and prevent that artificial declaration from appearing in symbol results.
+
+The candidate removes `Symbol.Parent`, `Reference.From`, and parent existence and
+cycle validation. Symbol IDs still distinguish real definitions within a file.
+References contain only a target key and a source span. Existing scope isolation,
+definition candidates, reverse dependencies, source revisions, tickets and atomic
+replacement are unchanged. Domain outlines and call ownership remain in the
+consumer's existing semantic model; this index does not require them.
+
+Two independently built consumers used identical main source and six identical
+Application/AppProject and Workflow/WorkflowTemplate YAML fixtures. Both passed
+the same **44 business assertions** through the public source/yamlview/index
+APIs. The assertions cover actual definition and reference spans, unresolved
+uses, later target arrival, duplicates, removals, retargeting, position-only
+updates and semantic invalidation. The common main SHA-256 was
+`aa2554841ee06f309e39b6de92378bdc63eaeeeef4c8430711de450076dae542`.
+
+The adapters intentionally differ:
+
+| Adapter obligation | Old model | Flat model |
+|---|---|---|
+| Submit reference-only facts directly | Rejected | Accepted |
+| Invent an owner and reserved identity | Required by this adapter | Unnecessary |
+| Raw empty-query symbols before a real target exists | Contains the invented owner | Empty |
+| Raw limit-one query after the target is created | Can return the invented owner first | Returns the real declaration |
+| Preserve correct visible symbol results | Identify/filter invented owners and request enough candidates | Direct bounded query |
+| Adapter code in this comparison | 46 lines / 1,577 bytes | 11 lines / 432 bytes |
+
+Neither adapter adds a persistent map. The old comparison adapter overfetches up
+to its known symbol budget; that is its disclosed implementation choice, not the
+only possible repair. Iterative widening or tracking artificial owners would be
+other additional responsibilities. The flat model needs none of those repairs.
+The line counts describe this adapter, not total language-server integration.
+
+The fixtures are syntax-complete and exercise callers without named declarations.
+They do not establish support for arbitrary damaged YAML, aliases, generated
+declarations, or every Argo binding rule. This is an intentional change to the
+unreleased API. The six rejection/recovery assertions for missing parents, parent
+cycles and unknown reference owners no longer describe the contract and were
+removed explicitly. Positive reference-only cases replace that obligation in the
+durable public consumer. The other 157 pre-existing index assertions passed the
+flat candidate before those new cases were added.
+
+### Release completed scanner work
+
+Previously, every remembered directory retained its `directoryWork` until the
+scanner closed. The replacement maps each seen path to its list element while
+queued, active or paused, and to nil after completion/failure. An absent key is
+unseen. It removes `directoryWork.element`; completed paths retain only their
+deduplication identity. At most two detached list elements remain while cursors
+are active or paused.
+
+The same 197-assertion experimental consumer passed on baseline, scanner
+replacement and slice-queue replacement. It included the existing workspace and
+coordination inputs, four active/paused priority checks, and an independent
+50,000-operation queue model. Only the scanner checks were added to the formal
+suite, since the queue replacement was rejected.
+
+For 6,001 directories, three fresh process runs with Go 1.27.3 on Linux amd64 gave
+the following medians after a completed pass and GC:
+
+| Measure | Baseline | Scanner replacement |
+|---|---:|---:|
+| Net retained Go heap | 712,528 B | 528,264 B |
+| Net retained objects | 12,032 | 6,029 |
+| Visited work units | 18,002 | 18,002 |
+| Complete | true | true |
+
+The object difference is consistent with releasing roughly one work object per
+completed directory. These are GC-sensitive net measurements, not exact object
+accounting, RSS, or plugin startup timings. No memory or scheduling state is
+transferred to the consumer.
+
+### Why the other structural replacements were rejected
+
+The slice Queue preserves coalescing, promotion, FIFO, capacity and weighted
+service; all 197 assertions pass. It also uses less retained memory. Its linear
+URI search and deletion shifts, however, scale poorly. Three-run local medians
+for filling a queue were:
+
+| Pending URIs | Existing map/list Queue | Slice Queue |
+|---|---:|---:|
+| 1,024 | 0.254 ms | 1.611 ms |
+| 8,192 | 1.475 ms | 109.830 ms |
+| 32,768 | 8.496 ms | 1,800.016 ms |
+
+With the active URI at the back of 32,768 pending items, repeated Put averaged
+about 15 ns versus 106 microseconds per operation in this probe. These observations
+and the O(n) lookup / O(n^2) fill paths justify retaining the lookup map and FIFO
+lists; they are not universal latency promises.
+
+The single posting-bucket alternative also passes all 163 baseline index
+assertions. At 20,000 pure-definition keys it adds 262,432 B of retained heap;
+with mostly single-role keys and one high-fanout key it adds 261,840 B. A dense
+dual-role ring instead saves 1,312,160 B. It adds role constants/dispatch and
+15 net lines, so the favorable dense fixture does not justify adopting it as a
+general simplification.
+
+The capability-token alternative passes the same 163 assertions but does not
+remove the index generation needed for query state. For 20,000 superseding Begin
+calls with an empty scope, the existing serial implementation allocates 0 B / 0
+objects in the measured loop; separate capabilities allocate 20,000 B / 20,000
+objects. A 24-character scope changes 480,000 B / 20,000 allocations to 500,000 B /
+40,000 allocations. The two-line reduction does not justify replacing an already
+available sequence with another allocation lifecycle.
+
+The Documents callback proposal was reviewed but not implemented: combining
+BeginRead/PublishRead/DiscardRead into a callback would retain the reservation
+and acceptance phases and introduce an I/O callback. It is a design assessment,
+not a completed ablation or evidence of equivalent behavior.
+
+### Second-round integration gates
+
+The adopted flat model and scanner changes pass the full native content-snapshot
+consumer: **10 suites / 470 assertions**, including **181 index** and **198
+workspace** assertions. The independent offline delivery consumer passes with a
+clean module cache and no replace directive. Both focused suites also pass with
+`-race`; the workspace coordination cases retain their explicit serial event
+ordering and do not claim editor-level concurrency coverage.
+
+All **13** existing index/workspace fault variants build successfully, then exit
+with their designated behavior assertion failing. `index-missing` also fails the
+new reference-only target-arrival cases. A compiler error, timeout or crash is not
+accepted as detecting a fault. The durable inputs and runner remain in the
+existing consumer and ablation tools; no new testing framework was added.

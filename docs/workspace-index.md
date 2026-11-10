@@ -148,15 +148,17 @@ Choose a scope based on the consumer's actual visibility rules. A scope may
 include several Git repositories. Namespace and resource kind belong in the
 consumer's key construction, and directory proximity only affects scheduling.
 
-Each file submits a complete Facts set. Multiple YAML documents receive distinct
-file-local SymbolIDs. Parent links support domain outlines and From links identify
-the owner of a reference/call. Source spans always identify the actual input
-bytes, including a source origin selected by a projection.
+Each file submits a complete, flat Facts set. Multiple YAML documents receive
+distinct file-local SymbolIDs. A file may contain only references: it does not
+need an invented declaration to own them. Source spans always identify the actual
+input bytes, including a source origin selected by a projection. Domain outlines
+and call ownership remain in the consumer's semantic model; the shared index does
+not require that tree to perform cross-file lookup or invalidation.
 
 | Domain need | Consumer-produced summary |
 |---|---|
 | Application references Project | Project key definition and matching reference key |
-| Template refers to another template | Template definition key, call owner, call-site span |
+| Template refers to another template | Target definition key and call-site span |
 | A template's input/output contract changes | Updated SemanticDigest |
 | A known local path affects validation | Opaque Dependencies key, even without a navigable reference |
 | A comment shifts a definition | New source spans/revision, unchanged semantic digest and fact shape |
@@ -164,7 +166,7 @@ bytes, including a source origin selected by a projection.
 SemanticDigest includes meaning absent from Symbol and Reference fields. It must
 be computed from relevant semantic input, rather than the whole text, so comments
 do not unnecessarily invalidate every caller. Conversely, a digest of names alone
-would miss policy and signature changes. The index compares relation/identity
+would miss policy, ownership, and signature changes. The index compares relation/identity
 shape as well, so an unchanged digest cannot hide a changed reference key.
 
 Definitions preserve all candidates. The consumer decides whether namespace,

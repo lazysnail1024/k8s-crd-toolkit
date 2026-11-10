@@ -112,14 +112,13 @@ type Scope string
 type Key string
 type SymbolID string
 type Symbol struct {
-    ID, Parent SymbolID
+    ID SymbolID
     Key Key
     Name, Kind string
     Span, Selection source.Span
 }
 type Reference struct {
     Target Key
-    From SymbolID
     Span source.Span
 }
 type Facts struct {
@@ -164,8 +163,8 @@ func (i *Index) Symbols(scope Scope, query string, limit int) (SymbolResult, err
 ### Identity and ownership
 
 - Scope is an opaque caller-defined visibility partition. It does not imply a directory, Git repository, namespace, or cluster. Each URI occupies one scope per Index; a scope may span many filesystem roots. Keys are opaque **within a scope**, and the `(scope, key)` pair is structurally distinct, not concatenated. Consumers encode any resource kind, namespace, template owner, or configuration identity they need in their own keys.
-- A file can contain many documents and symbols. Symbol IDs and Parent/From identities are local to that URI. IDs and keys must be nonempty; parents and reference sources must exist in that file. Parent cycles and duplicate IDs are rejected. Multiple symbols or files may define the same key: queries preserve every candidate and never choose a binding.
-- Spans are byte ranges in the file revision. The index checks nonnegative, ordered ranges and Selection containment within Span. It does not retain text and therefore cannot check UTF-8 boundaries or the actual file length; consumers must validate those against the source snapshot before submission. Parent relationships do not require physical source-range containment, allowing projected facts with explicit source origins.
+- A file can contain many documents and symbols, only references, or no facts. Symbol IDs are local to that URI; IDs and keys must be nonempty, and duplicate IDs are rejected. A reference requires a target key and source span, without a local declaration or synthetic owner. Multiple symbols or files may define the same key: queries preserve every candidate and never choose a binding. Symbol trees, reference ownership, and call graphs are domain structures outside this index.
+- Spans are byte ranges in the file revision. The index checks nonnegative, ordered ranges and Selection containment within Span. It does not retain text and therefore cannot check UTF-8 boundaries or the actual file length; consumers must validate those against the source snapshot before submission.
 - Facts are summaries, not a place to store ASTs or full document text. Mutable containers are copied on entry and exit; stored strings are detached from caller string backing storage. Returned strings are immutable Go values. Input containers must not be concurrently changed during a call.
 
 ### Updates, invalidation, and freshness
@@ -181,8 +180,8 @@ func (i *Index) Symbols(scope Scope, query string, limit int) (SymbolResult, err
 ### Dependencies and semantic changes
 
 - Every Reference also establishes a reverse dependency, even if its target has no definitions. Dependencies adds keys without navigable source positions, including caller-defined path/configuration dependencies. Empty target/dependency keys are rejected.
-- Definitions and References return fresh locations; Dependents intentionally also includes old pending summaries so a target change can still schedule its callers. All URI sets are deduplicated and sorted. Definitions sort by URI, Span, and symbol ID; References sort by URI, Span, and From.
-- SemanticDigest must reflect meaning relevant to consumers but absent from the public facts, for example a template signature or policy. The index additionally compares symbol identity/parent/key/name/kind, reference target/source, and dependency multisets. Array order and spans do not affect semantic equality; duplicate reference/dependency counts do. Reusing a digest cannot hide a changed key or relation.
+- Definitions and References return fresh locations; Dependents intentionally also includes old pending summaries so a target change can still schedule its callers. All URI sets are deduplicated and sorted. Definitions sort by URI, Span, and symbol ID; References sort by URI and Span.
+- SemanticDigest must reflect meaning relevant to consumers but absent from the public facts, for example a template signature, domain ownership, or policy. The index additionally compares symbol identity/key/name/kind, reference target, and dependency multisets. Array order and spans do not affect semantic equality; duplicate reference/dependency counts do. Reusing a digest cannot hide a changed key or relation.
 - A semantic or scope change returns the changed URI plus direct dependents of its old and new definition keys in Change.Affected. This includes previously unresolved uses and duplicate-candidate changes. A position-only change updates locations and revision but returns only the changed URI. Navigation caches must still use scope Generation/revision freshness rather than relying on Affected to detect moved locations. The caller schedules downstream recomputation and further propagation; the library does not run analysis.
 - Symbols performs a case-sensitive substring search over fresh names. A positive limit bounds retained result items, sorted deterministically; Truncated reports additional known matches. Search still visits known symbols in the scope and is not a filesystem search or a completeness proof.
 

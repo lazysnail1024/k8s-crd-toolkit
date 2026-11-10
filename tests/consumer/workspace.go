@@ -30,6 +30,7 @@ func workspaceCases() {
 	scannerFailureCases()
 	scannerInteractionCases()
 	scannerLifecycleCases()
+	scannerPromotionCases()
 	workspaceEvidence["platform"] = runtime.GOOS + "/" + runtime.GOARCH
 	check("workspace-evidence-written", json.NewEncoder(os.Stderr).Encode(workspaceEvidence) == nil)
 }
@@ -657,4 +658,57 @@ func scannerLifecycleCases() {
 	priorityErr = failed.Prioritize(missing)
 	repaired, err := failed.Next(context.Background(), 10)
 	check("scanner-failed-directory-not-requeued-in-pass", writeErr == nil && priorityErr == nil && err == nil && repaired.Done && !repaired.Complete && len(repaired.Files) == 0)
+}
+
+// Priority upgrades must reach an active or paused directory after it has left
+// the pending list. An upgraded cursor must retain its priority when resumed.
+func scannerPromotionCases() {
+	root := fixtureDirectory("scanner-promotions")
+	if root == "" {
+		return
+	}
+	defer os.RemoveAll(root)
+	a, b, c := filepath.Join(root, "a"), filepath.Join(root, "b"), filepath.Join(root, "c")
+	valid := os.MkdirAll(b, 0700) == nil
+	for n := 0; n < 1000; n++ {
+		valid = writeFixture(root, fmt.Sprintf("a/noise-%04d.txt", n), "noise") == nil && valid
+	}
+	valid = writeFixture(root, "c/target.yaml", "kind: Resource\n") == nil && valid
+	check("scanner-promotion-fixtures", valid)
+	if !valid {
+		return
+	}
+	target := filepath.Join(c, "target.yaml")
+	for _, paused := range []bool{false, true} {
+		state := "active"
+		roots := []string{a, c}
+		if paused {
+			state, roots = "paused", []string{a, b, c}
+		}
+		scanner, err := workspace.NewScanner(roots, workspace.ScanOptions{Extensions: []string{".yaml"}, MaxDirectories: 8})
+		if err != nil {
+			check("scanner-"+state+"-directory-promotion-retained", false)
+			check("scanner-"+state+"-promotion-still-discovers-exactly", false)
+			continue
+		}
+		_, err = scanner.Next(context.Background(), 1)
+		accepted := err == nil
+		if paused {
+			accepted = scanner.Prioritize(b) == nil && accepted
+			_, err = scanner.Next(context.Background(), 1)
+			accepted = err == nil && accepted
+		}
+		accepted = scanner.Prioritize(a) == nil && accepted
+		if paused {
+			// Finish the empty priority directory and resume the promoted cursor.
+			_, err = scanner.Next(context.Background(), 2)
+			accepted = err == nil && accepted
+		}
+		accepted = scanner.Prioritize(c) == nil && accepted
+		batch, err := scanner.Next(context.Background(), 4)
+		check("scanner-"+state+"-directory-promotion-retained", accepted && err == nil && len(batch.Files) == 0 && batch.Visited == 4)
+		remaining := drainScanner(scanner, 31)
+		closeErr := scanner.Close()
+		check("scanner-"+state+"-promotion-still-discovers-exactly", accepted && remaining.complete && remaining.err == nil && remaining.issues == 0 && len(remaining.files) == 1 && remaining.files[0] == target && closeErr == nil)
+	}
 }

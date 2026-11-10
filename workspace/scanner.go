@@ -36,7 +36,6 @@ type Batch struct {
 type directoryWork struct {
 	path     string
 	priority bool
-	element  *list.Element
 }
 
 type directoryCursor struct {
@@ -55,7 +54,9 @@ type Scanner struct {
 	extensions map[string]bool
 	excluded   map[string]bool
 	maximum    int
-	seen       map[string]*directoryWork
+	// An absent path is unseen; an element owns queued/active/paused work;
+	// nil retains only the identity of a completed or failed directory.
+	seen       map[string]*list.Element
 	pending    list.List
 	active     *directoryCursor
 	paused     *directoryCursor
@@ -71,7 +72,7 @@ func NewScanner(roots []string, options ScanOptions) (*Scanner, error) {
 	if options.MaxDirectories <= 0 {
 		return nil, fmt.Errorf("workspace: directory limit must be positive")
 	}
-	s := &Scanner{maximum: options.MaxDirectories, seen: make(map[string]*directoryWork), extensions: make(map[string]bool), excluded: make(map[string]bool)}
+	s := &Scanner{maximum: options.MaxDirectories, seen: make(map[string]*list.Element), extensions: make(map[string]bool), excluded: make(map[string]bool)}
 	for _, extension := range options.Extensions {
 		if len(extension) < 2 || extension[0] != '.' || strings.ContainsAny(extension, `/\\`) {
 			return nil, fmt.Errorf("workspace: invalid extension")
@@ -108,12 +109,11 @@ func absoluteDirectory(path string) (string, error) {
 }
 
 func (s *Scanner) enqueue(path string, priority bool) error {
-	if existing := s.seen[path]; existing != nil {
-		if priority {
-			existing.priority = true
-			if existing.element != nil {
-				s.pending.MoveToFront(existing.element)
-			}
+	if element, exists := s.seen[path]; exists {
+		if priority && element != nil {
+			element.Value.(*directoryWork).priority = true
+			// MoveToFront is a no-op for an active/paused element already removed.
+			s.pending.MoveToFront(element)
 		}
 		return nil
 	}
@@ -121,12 +121,13 @@ func (s *Scanner) enqueue(path string, priority bool) error {
 		return ErrLimit
 	}
 	work := &directoryWork{path: path, priority: priority}
+	var element *list.Element
 	if priority {
-		work.element = s.pending.PushFront(work)
+		element = s.pending.PushFront(work)
 	} else {
-		work.element = s.pending.PushBack(work)
+		element = s.pending.PushBack(work)
 	}
-	s.seen[path] = work
+	s.seen[path] = element
 	return nil
 }
 
@@ -257,8 +258,8 @@ func (s *Scanner) activate(ctx context.Context, batch *Batch) error {
 		return ctx.Err()
 	}
 	s.pending.Remove(element)
-	work.element = nil
 	if err != nil {
+		s.seen[work.path] = nil
 		s.issue(batch, work.path, err)
 		return nil
 	}
@@ -326,6 +327,7 @@ func (s *Scanner) finish(batch *Batch) {
 	if err := cursor.file.Close(); err != nil {
 		s.issue(batch, cursor.work.path, err)
 	}
+	s.seen[cursor.work.path] = nil
 	s.active = nil
 }
 

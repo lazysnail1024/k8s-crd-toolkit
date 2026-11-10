@@ -22,12 +22,12 @@ func (i *Index) measure(f Facts) (int, error) {
 		return true
 	}
 	for _, s := range f.Symbols {
-		if !add(string(s.ID)) || !add(string(s.Parent)) || !add(string(s.Key)) || !add(s.Name) || !add(s.Kind) {
+		if !add(string(s.ID)) || !add(string(s.Key)) || !add(s.Name) || !add(s.Kind) {
 			return 0, ErrLimit
 		}
 	}
 	for _, r := range f.References {
-		if !add(string(r.Target)) || !add(string(r.From)) {
+		if !add(string(r.Target)) {
 			return 0, ErrLimit
 		}
 	}
@@ -52,22 +52,19 @@ func (i *Index) fits(old *stored, f Facts, bytes int) bool {
 func validSpan(span source.Span) bool { return span.Start >= 0 && span.End >= span.Start }
 
 func validate(f Facts) error {
-	parents := make(map[SymbolID]SymbolID, len(f.Symbols))
+	ids := make(map[SymbolID]struct{}, len(f.Symbols))
 	for _, s := range f.Symbols {
 		if s.ID == "" || s.Key == "" || !validSpan(s.Span) || !validSpan(s.Selection) || s.Selection.Start < s.Span.Start || s.Selection.End > s.Span.End {
 			return fmt.Errorf("index: invalid symbol identity or span")
 		}
-		if _, exists := parents[s.ID]; exists {
+		if _, exists := ids[s.ID]; exists {
 			return fmt.Errorf("index: duplicate symbol ID")
 		}
-		parents[s.ID] = s.Parent
-	}
-	if err := validateParents(parents); err != nil {
-		return err
+		ids[s.ID] = struct{}{}
 	}
 	for _, r := range f.References {
-		if _, exists := parents[r.From]; !exists || r.Target == "" || !validSpan(r.Span) {
-			return fmt.Errorf("index: invalid reference source, target, or span")
+		if r.Target == "" || !validSpan(r.Span) {
+			return fmt.Errorf("index: invalid reference target or span")
 		}
 	}
 	for _, key := range f.Dependencies {
@@ -78,38 +75,15 @@ func validate(f Facts) error {
 	return nil
 }
 
-func validateParents(parents map[SymbolID]SymbolID) error {
-	for _, parent := range parents {
-		if _, exists := parents[parent]; parent != "" && !exists {
-			return fmt.Errorf("index: parent symbol does not exist")
-		}
-	}
-	visited := make(map[SymbolID]uint8, len(parents))
-	for id := range parents {
-		current := id
-		for current != "" && visited[current] == 0 {
-			visited[current] = 1
-			current = parents[current]
-		}
-		if current != "" && visited[current] == 1 {
-			return fmt.Errorf("index: cyclic symbol parents")
-		}
-		for current = id; current != "" && visited[current] == 1; current = parents[current] {
-			visited[current] = 2
-		}
-	}
-	return nil
-}
-
 func cloneFacts(f Facts) Facts {
 	next := Facts{SemanticDigest: f.SemanticDigest, Symbols: append([]Symbol(nil), f.Symbols...), References: append([]Reference(nil), f.References...), Dependencies: append([]Key(nil), f.Dependencies...)}
 	for n, s := range next.Symbols {
-		s.ID, s.Parent, s.Key = SymbolID(strings.Clone(string(s.ID))), SymbolID(strings.Clone(string(s.Parent))), Key(strings.Clone(string(s.Key)))
+		s.ID, s.Key = SymbolID(strings.Clone(string(s.ID))), Key(strings.Clone(string(s.Key)))
 		s.Name, s.Kind = strings.Clone(s.Name), strings.Clone(s.Kind)
 		next.Symbols[n] = s
 	}
 	for n, r := range next.References {
-		r.Target, r.From = Key(strings.Clone(string(r.Target))), SymbolID(strings.Clone(string(r.From)))
+		r.Target = Key(strings.Clone(string(r.Target)))
 		next.References[n] = r
 	}
 	for n, key := range next.Dependencies {

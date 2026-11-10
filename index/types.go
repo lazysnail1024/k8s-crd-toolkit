@@ -20,18 +20,19 @@ type Key string
 // edits allow the index to recognize unchanged meaning.
 type SymbolID string
 
-// Symbol IDs and parents are local to one file. Keys identify definitions in a
+// Symbol IDs are local to one file. Keys identify definitions in a
 // caller-defined scope; duplicate keys are retained as distinct candidates.
 type Symbol struct {
-	ID, Parent      SymbolID
+	ID              SymbolID
 	Key             Key
 	Name, Kind      string
 	Span, Selection source.Span
 }
 
+// Reference locates a use of a key. A file may contain references without
+// declaring symbols; domain ownership and call graphs are not required.
 type Reference struct {
 	Target Key
-	From   SymbolID
 	Span   source.Span
 }
 

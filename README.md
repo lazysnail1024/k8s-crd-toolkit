@@ -37,11 +37,11 @@ For vendored consumers, `go mod vendor` needs the grammar's `tree_sitter` header
 
 Keep current-file work independent of background discovery. Accept open buffers first, process related directories in small batches, and queue the remaining workspace with bounded concurrency. The queue coalesces URI notifications; the consumer dispatches the latest accepted snapshot and its original index ticket. Index facts are detached summaries, so closed-file text and parser trees can be released.
 
-`index` preserves multiple definition candidates and never decides namespace, resource identity, or whether a rename is safe. `workspace` does not install watchers or start workers. A discovery pass being complete and an index having no pending files are separate facts; read failures, running work, and changed configurations still need to be accounted for by the consumer.
+`index` stores flat definitions and references, including files with references but no declarations. It preserves multiple definition candidates and never decides namespace, resource identity, or whether a rename is safe. `workspace` does not install watchers or start workers. A discovery pass being complete and an index having no pending files are separate facts; read failures, running work, and changed configurations still need to be accounted for by the consumer.
 
 The public consumers exercise actual Application/AppProject and Workflow/WorkflowTemplate YAML fixtures, input races, incremental invalidation, directory continuation, capacity limits, and buildable fault-injection variants. These verify the shared mechanisms, not full Argo language-server behavior or Zed startup latency.
 
-[Design ablations](docs/design-ablation.md) record which duplicate states were removed, which algorithms were simplified, and which proposed deletions failed the resource or responsiveness requirements. The unreleased Queue API now contains only URI and priority; the three original package contracts remain unchanged.
+[Design ablations](docs/design-ablation.md) record which duplicate states and model requirements were removed, which algorithms were simplified, and which proposed deletions failed the resource or responsiveness requirements. The unreleased APIs omit Queue.Generation and the index's Parent/From tree requirements; the three original package contracts remain unchanged.
 
 ## License and attribution
 
