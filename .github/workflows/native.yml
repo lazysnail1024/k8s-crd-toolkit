@@ -86,11 +86,14 @@ jobs:
         env:
           GOFLAGS: '-race'
         run: python tests/e2e.py index-race
+      - name: Verify strict YAML projection baseline
+        run: python tests/e2e.py yamlvalue-comments
       - name: Verify index and workspace guards with buildable ablations
         run: >-
           python tests/ablate.py
           index-ticket index-reuse index-missing index-position index-fresh index-retention
           index-prefix schemaquery-validation yamlvalue-origin
+          yamlvalue-comment-input yamlvalue-comment-characters yamlvalue-comment-tabs
           workspace-overlay workspace-ticket workspace-discard
           workspace-coalescing workspace-fairness workspace-priority
           workspace-workqueue-fairness workspace-workqueue-followup
