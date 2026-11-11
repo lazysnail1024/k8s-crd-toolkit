@@ -63,3 +63,37 @@
 **回归入口。** [`native.py`](../tests/native.py) 从独立模块、无 replace 的源码快照运行公共消费者；[`delivery.py`](../tests/delivery.py) 用全新 module cache 与仅文件代理验证离线交付；[`native_delivery_e2e.py`](../tests/native_delivery_e2e.py) 和 [`delivery_failures_e2e.py`](../tests/delivery_failures_e2e.py) 检查空套件、错误平台、缺失编译器、损坏报告和超时不能沿用成功结果。原生 CI 定义见 [native.yml](../.github/workflows/native.yml)。
 
 **证据边界。** 这些测试证明本次输入和运行条件下的公共库交付行为。模拟 Windows ZIP 环境不等于原生 Windows 验收，公共消费者通过也不等于真实 Zed 启动和所有业务跳转通过；相应结论由消费者的原生运行、LSP 和编辑器证据支持。
+
+## 8. 能解析 YAML 不等于能独立修改投影来源
+
+**发生的问题。** 两个插件各自维护 alias/merge 值和来源规则，迁移时还发现 Workflow 的局部修复尝试与完整范围回退共用逻辑结果预算，导致大 alias fixture 的合法修复被误拒绝。问题由真实应用修复后的诊断检查复现，不能靠增大配额掩盖。
+
+**当前处理。** 公共 `yamlvalue` 统一值与 exact/derived/ambiguous 来源；消费者保留各自 tag 政策及整个请求的预算。每次 before/after 分析和回退获得独立且明确的预算上下文，不继承前一条失败路径的消耗。共享 anchor、alias 使用点和 merge 来源不作为独立标量编辑。
+
+**回归入口。** 公共 `yamlvalue` 消费者与 `yamlvalue-origin` 可编译反例覆盖来源；两个插件各自 CLI/LSP fixture 校验真实诊断、位置和修复，Workflow 的 `wf-semantic-origin-budget.py` 覆盖大投影与局部修复。
+
+## 9. Schema 查询必须复用正在校验的编译图
+
+**发生的问题。** Argo CD 的默认 auto 版本在已能报告 enum 错误时，修复查询仍从原始 Schema 结构寻找候选，无法得到等价的可用枚举修复。独立维护 raw-schema 遍历与校验编译图还容易在组合分支和候选接受规则上分歧。
+
+**当前处理。** 两个消费者都用公共 `schemaquery` 查询原有 compiled schema；候选继续经原 validator 验证。删去没有真实调用方的额外公共 Accepts 接口，未引入 Schema registry、compiler cache 或业务 provider。未知分支和预算失败显式返回，不把空候选当完整证明。
+
+**回归入口。** 公共非 Argo Schema 消费者和 `schemaquery-validation` 反例；CD 的 auto/精确版本 codeAction → resolve → 应用 → 诊断清除真实链路。移除候选验证必须在编译成功后被行为断言检出。
+
+## 10. 先截断再筛选会漏掉相关资源
+
+**发生的问题。** 全域候选超过 1000 时，如果先取 1000 项再按 kind/namespace 筛选，排在后面的相关模板或项目不会出现，即使相关集合本身很小。
+
+**当前处理。** `SymbolsWithPrefix` 在同一有界查询内先按消费者编码的 key 前缀筛选，再应用结果上限。不在索引锁内运行消费者回调；超限仍返回 Truncated，插件不能把它当完整编辑范围。
+
+**回归入口。** `index_prefix.go` 的 1001 个不相关资源反例与 `index-prefix` 消融；Workflow 的真实 LSP 用例同时覆盖相关候选可见和相关候选自身超限后的修复拒绝。
+
+## 11. 原文范围正确，不代表重复解码成本合理
+
+**发生的问题。** Workflow 的原 128 MiB 输入边界验收中，小资源后附的大段 ASCII 注释反复进入 schema 与外部引用分析的严格投影，触发原有 5 秒期限。CPU profile 显示主要成本在 yaml.v3 和 YAML-to-JSON 解码器的注释扫描。`Document.Span` 与 mapping 根的范围都可能覆盖尾注释，不能假设根范围更短，也不能用最后一个值节点的位置截断整个文档。
+
+**当前处理。** `yamlview` 根据现有 CST 中的真实 comment 节点建立保守 `ContentSpan`，`yamlvalue.Project` 在完整原文匹配后仅缩短解码输入。原文本、位置、块标量内容、输入字节配额和来源证明全部保留；无需在插件增加 decoder、绕过路径或投影缓存。
+
+**已验证的边界。** 审阅复现了 CST 把 NEL/LS/PS 后的字段包含在 comment 内、但严格 YAML 解码器仍把它解释为字段的差异；非法控制字符也可能被 CST 接受，却必须由严格解码器拒绝。因此只省略 ASCII 可打印字符注释；非 ASCII 一律保留原路径。可编译消融还发现，注释之间带 TAB 的空行会被 YAML-to-JSON 解码器拒绝，不能作为普通空白删除。含任意 TAB 的文档都保留完整范围，不再复制一套缩进语法来猜测哪些 TAB 可以删除。普通字符串删尾、正则删 `#`、删尾空白或按叶节点结束位置裁剪均不能提供这个证明。
+
+**回归入口。** [`yamlvalue_comments.go`](../tests/consumer/yamlvalue_comments.go) 校验 literal/folded chomping、字面 `#`、flow 闭括号、null、tag、merge、显式文档边界、CRLF、多文档位置、Unicode 换行、非法字符和完整原文错配。5 MiB 尾注释快照先完成 CST 解析，再单独测 Project 分配；`yamlvalue-comment-input` 可编译消融恢复全范围解码，必须命中分配断言；`yamlvalue-comment-characters` 移除字符防线，必须命中真实 Unicode 字段丢失断言；`yamlvalue-comment-tabs` 移除全篇 TAB 检查，必须命中原始 TAB 输入拒绝断言。资源阈值属于验证条件，不构成任意工作区的耗时保证；整个请求的原期限仍由真实消费者验收。

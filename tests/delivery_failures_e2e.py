@@ -8,7 +8,7 @@ for case in ['missing-go','missing-cc','invalid-report','timeout','rss-guard-del
  with tempfile.TemporaryDirectory(prefix='delivery-failure-') as d:
   repo=pathlib.Path(d)/'repo';repo.mkdir()
   for name in ['go.mod','go.sum','LICENSE','CONTRACT.md']:shutil.copyfile(ROOT/name,repo/name)
-  for name in ['tests','tools','source','edit','yamlview','index','workspace']:shutil.copytree(ROOT/name,repo/name,ignore=shutil.ignore_patterns('__pycache__'))
+  for name in ['tests','tools','source','edit','yamlview','yamlvalue','schemaquery','index','workspace']:shutil.copytree(ROOT/name,repo/name,ignore=shutil.ignore_patterns('__pycache__'))
   target=repo/'artifacts/native-delivery';target.mkdir(parents=True)
   sentinel={'passed':True,'previousRun':'sentinel-before-failing-rerun'}
   (target/'report.json').write_text(json.dumps(sentinel))

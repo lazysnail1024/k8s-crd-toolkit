@@ -53,16 +53,16 @@ try:
   report['inputArchiveSHA256']=sha(archive)
   binary=out/('consumer.exe' if os.name=='nt' else 'consumer');required([go,'build','-trimpath','-mod=readonly','-buildvcs=false','-o',str(binary),'.'],c);report['binarySHA256']=sha(binary);required([go,'version','-m',str(binary)],c)
   licenses=out/'licenses';licenses.mkdir(exist_ok=True);shutil.copyfile(ROOT/'LICENSE',licenses/'toolkit-MIT');shutil.copyfile(pathlib.Path(info['GOROOT'])/'LICENSE',licenses/'Go-BSD');shutil.copyfile(ROOT/'yamlview/internal/parser/grammar/LICENSE',licenses/'yaml-grammar-MIT')
-  for module in ['github.com/tree-sitter/go-tree-sitter','github.com/mattn/go-pointer']:
-   meta=json.loads(required([go,'list','-m','-json',module],c));source=pathlib.Path(meta['Dir']);name=module.rsplit('/',1)[1]
-   shutil.copyfile(source/'LICENSE',licenses/(name+'-MIT'))
+  for module in ['github.com/tree-sitter/go-tree-sitter','github.com/mattn/go-pointer','github.com/santhosh-tekuri/jsonschema/v6','gopkg.in/yaml.v3','sigs.k8s.io/yaml','go.yaml.in/yaml/v2','golang.org/x/text']:
+   meta=json.loads(required([go,'list','-m','-json',module],c));source=pathlib.Path(meta['Dir']);name=module.replace('/','-')
+   shutil.copyfile(source/'LICENSE',licenses/(name+'-LICENSE'))
    if (source/'src/unicode/LICENSE').is_file():shutil.copyfile(source/'src/unicode/LICENSE',licenses/'tree-sitter-Unicode')
-  for stage in ['source','edit','yaml','audit','budget','retention','resume','resources','index','workspace']:
+  for stage in ['source','edit','yaml','yamlvalue','schemaquery','audit','budget','retention','resume','resources','index','workspace']:
    r=run([str(binary),stage],c)
    try:values=json.loads(r['stdout']);report['stageResults'][stage]=values;report['assertions'][stage]=r['exitCode']==0 and bool(values) and all(v is True for v in values.values())
    except Exception:report['assertions'][stage]=False
 except Exception as e:report['error']=repr(e)
 finally:
- report['assertions']['requiredNonemptySuites']=set(report['stageResults'])=={'source','edit','yaml','audit','budget','retention','resume','resources','index','workspace'} and all(bool(v) for v in report['stageResults'].values())
+ report['assertions']['requiredNonemptySuites']=set(report['stageResults'])=={'source','edit','yaml','yamlvalue','schemaquery','audit','budget','retention','resume','resources','index','workspace'} and all(bool(v) for v in report['stageResults'].values())
  report['passed']='error' not in report and bool(report['assertions']) and all(report['assertions'].values()) and all(s['exitCode']==0 for s in report['steps']);report['replay']=sys.argv
  text=json.dumps(report,indent=2);(out/'report.json').write_text(text);(out/('report-'+str(time.time_ns())+'.json')).write_text(text);print(json.dumps({'passed':report['passed'],'assertions':report['assertions'],'error':report.get('error')}));sys.exit(0 if report['passed'] else 1)
