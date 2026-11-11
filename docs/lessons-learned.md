@@ -87,3 +87,13 @@
 **当前处理。** `SymbolsWithPrefix` 在同一有界查询内先按消费者编码的 key 前缀筛选，再应用结果上限。不在索引锁内运行消费者回调；超限仍返回 Truncated，插件不能把它当完整编辑范围。
 
 **回归入口。** `index_prefix.go` 的 1001 个不相关资源反例与 `index-prefix` 消融；Workflow 的真实 LSP 用例同时覆盖相关候选可见和相关候选自身超限后的修复拒绝。
+
+## 11. 原文范围正确，不代表重复解码成本合理
+
+**发生的问题。** Workflow 的原 128 MiB 输入边界验收中，小资源后附的大段 ASCII 注释反复进入 schema 与外部引用分析的严格投影，触发原有 5 秒期限。CPU profile 显示主要成本在 yaml.v3 和 YAML-to-JSON 解码器的注释扫描。`Document.Span` 与 mapping 根的范围都可能覆盖尾注释，不能假设根范围更短，也不能用最后一个值节点的位置截断整个文档。
+
+**当前处理。** `yamlview` 根据现有 CST 中的真实 comment 节点建立保守 `ContentSpan`，`yamlvalue.Project` 在完整原文匹配后仅缩短解码输入。原文本、位置、块标量内容、输入字节配额和来源证明全部保留；无需在插件增加 decoder、绕过路径或投影缓存。
+
+**已验证的边界。** 审阅复现了 CST 把 NEL/LS/PS 后的字段包含在 comment 内、但严格 YAML 解码器仍把它解释为字段的差异；非法控制字符也可能被 CST 接受，却必须由严格解码器拒绝。因此只省略 ASCII 可打印字符注释；非 ASCII 一律保留原路径。可编译消融还发现，注释之间带 TAB 的空行会被 YAML-to-JSON 解码器拒绝，不能作为普通空白删除。含任意 TAB 的文档都保留完整范围，不再复制一套缩进语法来猜测哪些 TAB 可以删除。普通字符串删尾、正则删 `#`、删尾空白或按叶节点结束位置裁剪均不能提供这个证明。
+
+**回归入口。** [`yamlvalue_comments.go`](../tests/consumer/yamlvalue_comments.go) 校验 literal/folded chomping、字面 `#`、flow 闭括号、null、tag、merge、显式文档边界、CRLF、多文档位置、Unicode 换行、非法字符和完整原文错配。5 MiB 尾注释快照先完成 CST 解析，再单独测 Project 分配；`yamlvalue-comment-input` 可编译消融恢复全范围解码，必须命中分配断言；`yamlvalue-comment-characters` 移除字符防线，必须命中真实 Unicode 字段丢失断言；`yamlvalue-comment-tabs` 移除全篇 TAB 检查，必须命中原始 TAB 输入拒绝断言。资源阈值属于验证条件，不构成任意工作区的耗时保证；整个请求的原期限仍由真实消费者验收。

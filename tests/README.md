@@ -22,7 +22,7 @@ python3 tests/native.py --expected-platform linux/amd64
 |---|---|
 | `source`、`edit`；[`main.go`](consumer/main.go) | UTF-8/UTF-16/CRLF 坐标、顺序输入变化、基础 revision、原文与重叠校验 |
 | `yaml`、`audit`；[`yaml.go`](consumer/yaml.go)、[`audit.go`](consumer/audit.go) | YAML 结构、损坏恢复、重复键、alias/merge 的保留与位置 |
-| `yamlvalue`；[`yamlvalue.go`](consumer/yamlvalue.go) | alias/merge 值、来源独立性、共享 anchor、显式 tag 策略、展开预算和部分根字段提示 |
+| `yamlvalue`；[`yamlvalue.go`](consumer/yamlvalue.go)、[`yamlvalue_comments.go`](consumer/yamlvalue_comments.go) | alias/merge 值、来源独立性、共享 anchor、显式 tag 策略、展开预算、部分根字段提示；尾注释的语义与原文范围、Unicode/控制字符、投影分配 |
 | `schemaquery`；[`schemaquery.go`](consumer/schemaquery.go) | 非 Argo schema、引用/组合分支、有限兄弟约束、候选验证、oneOf、预算和显式未支持状态 |
 | `budget`、`resume`；[`budget.go`](consumer/budget.go)、[`resume.go`](consumer/resume.go) | 输入/文档/深度边界、scanner 序列化、分片恢复及取消 |
 | `retention`、`resources`；[`retention.go`](consumer/retention.go)、[`main.go`](consumer/main.go) | 成功/错误/取消后的 context 持有、原生对象释放和 RSS 增长 |
@@ -43,6 +43,8 @@ GOFLAGS=-race python3 tests/e2e.py workspace-race
 
 查询分配测试用大量符号与小结果上限检测 collect-all 实现；存储测试用大输入的短字符串切片检测全文持有；扫描用例先推进大后台目录，再提升当前目录，检查有界批次内的响应以及最终不漏不重。Application/AppProject 和 Workflow/WorkflowTemplate fixture 的 Argo 提取逻辑位于测试消费者，不进入公共库。
 
+尾注释投影测试先构建并解析一个恰好 5 MiB、语义值很小的快照，再测三次 `yamlvalue.Project` 的 `TotalAlloc` 增量，总量须小于 3 MiB；不把 snapshot/CST 分配混入投影测量，也不依赖机器速度。把 Project 输入恢复为完整原范围的消融仍须编译并返回正确值，但必须因重复扫描大注释触发指定分配失败。literal/folded 标量、显式缩进、CRLF、多文档、Unicode 换行和非法字符另有固定行为期望，防止性能优化吞掉内容或错误。
+
 资源阈值属于可复现实验条件，不是新增 API 配额或“没有任何泄漏”的证明。RSS 在 Linux 使用 `/proc/self/status` 的 VmRSS，macOS 使用 `ps`，Windows 使用 `GetProcessMemoryInfo` 的 WorkingSetSize；测量失败必须使验证失败，不能以 Go heap 替代原生 RSS。
 
 ## 可编译的故障注入
@@ -51,6 +53,7 @@ GOFLAGS=-race python3 tests/e2e.py workspace-race
 python3 tests/ablate.py
 python3 tests/ablate.py index-ticket index-reuse index-retention
 python3 tests/ablate.py index-prefix schemaquery-validation yamlvalue-origin
+python3 tests/ablate.py yamlvalue-comment-input yamlvalue-comment-characters yamlvalue-comment-tabs
 python3 tests/ablate.py workspace-workqueue-fairness workspace-workqueue-followup workspace-membership-complete
 python3 tests/ablate.py resources retention
 ```
