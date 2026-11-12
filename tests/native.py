@@ -5,12 +5,14 @@ ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'too
 p=argparse.ArgumentParser();p.add_argument('--expected-platform',required=True);p.add_argument('--cc-version');p.add_argument('--source-commit',help='require module bytes to match this Git commit');p.add_argument('--output',type=pathlib.Path,default=ROOT/'artifacts/native');args=p.parse_args();out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
 env=os.environ.copy();env.update(GOWORK='off',CGO_ENABLED='1',GOTOOLCHAIN='local');go=env.get('GO') or (str(pathlib.Path(env['GOROOT'])/'bin/go') if env.get('GOROOT') else shutil.which('go'));cc=env.get('CC') or ('gcc' if os.name=='nt' else 'cc')
 report={'expectedPlatform':args.expected_platform,'python':sys.version,'host':platform.platform(),'runnerImage':{k:env.get(k) for k in ('ImageOS','ImageVersion','RUNNER_OS','RUNNER_ARCH')},'steps':[],'assertions':{},'stageResults':{}}
+started=time.monotonic()
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
 def run(argv,cwd,timeout=180):
+ started=time.monotonic()
  try:
   r=subprocess.run(argv,cwd=cwd,env=env,text=True,capture_output=True,timeout=timeout);step=dict(argv=argv,stdout=r.stdout,stderr=r.stderr,exitCode=r.returncode)
  except Exception as e:step=dict(argv=argv,stdout=str(getattr(e,'stdout','')),stderr=str(getattr(e,'stderr',''))+'\n'+repr(e),exitCode=124 if isinstance(e,subprocess.TimeoutExpired) else 127)
- report['steps'].append(step)
+ step['elapsedSeconds']=round(time.monotonic()-started,6);report['steps'].append(step)
  return step
 def required(argv,cwd):
  r=run(argv,cwd)
@@ -32,10 +34,23 @@ try:
  if args.source_commit:
   if not report['gitProvenance']['available']:raise RuntimeError('source commit verification requires Git metadata')
   provenance=report['gitProvenance'];provenance['commit']=required(['git','rev-parse','--verify',args.source_commit+'^{commit}'],ROOT).strip();provenance['files']={}
-  for name,digest in manifest['files'].items():
-   expected=required(['git','rev-parse',provenance['commit']+':'+name],ROOT).strip()
-   actual=required(['git','hash-object','--no-filters',str(ROOT/name)],ROOT).strip()
-   provenance['files'][name]={'commitObject':expected,'checkoutObject':actual,'matchesCommit':expected==actual and sha(ROOT/name)==digest}
+  # Read the complete committed runtime inventory once. Comparing both path
+  # sets also rejects deleted non-Go inputs which a successful build can miss.
+  listing=required(['git','ls-tree','-r','-z','--full-tree',provenance['commit'],'--','go.mod','go.sum','LICENSE','CONTRACT.md','source','edit','yamlview','yamlvalue','schemaquery','index','workspace'],ROOT)
+  committed={}
+  for entry in filter(None,listing.split('\0')):
+   metadata,name=entry.split('\t',1);mode,kind,object_id=metadata.split()
+   if name.endswith('_test.go'):continue
+   if kind!='blob' or name in committed:raise RuntimeError('invalid committed runtime entry: '+name)
+   committed[name]=object_id
+  names=sorted(manifest['files'])
+  if not names:raise RuntimeError('empty runtime snapshot')
+  objects=required(['git','hash-object','--no-filters','--']+[str(ROOT/name) for name in names],ROOT).splitlines()
+  if len(objects)!=len(names):raise RuntimeError('incomplete checkout blob hashes')
+  checked=dict(zip(names,objects))
+  for name in sorted(set(committed)|set(names)):
+   expected=committed.get(name);actual=checked.get(name);digest=manifest['files'].get(name)
+   provenance['files'][name]={'commitObject':expected,'checkoutObject':actual,'matchesCommit':expected is not None and expected==actual and digest is not None and sha(ROOT/name)==digest}
   report['assertions']['snapshotMatchesCommit']=bool(provenance['files']) and all(v['matchesCommit'] for v in provenance['files'].values())
   if not report['assertions']['snapshotMatchesCommit']:raise RuntimeError('module snapshot differs from committed source bytes')
  with tempfile.TemporaryDirectory(prefix='toolkit-native-') as directory:
@@ -63,6 +78,7 @@ try:
    except Exception:report['assertions'][stage]=False
 except Exception as e:report['error']=repr(e)
 finally:
+ report['elapsedSeconds']=round(time.monotonic()-started,6)
  report['assertions']['requiredNonemptySuites']=set(report['stageResults'])=={'source','edit','yaml','yamlvalue','schemaquery','audit','budget','retention','resume','resources','index','workspace'} and all(bool(v) for v in report['stageResults'].values())
  report['passed']='error' not in report and bool(report['assertions']) and all(report['assertions'].values()) and all(s['exitCode']==0 for s in report['steps']);report['replay']=sys.argv
  text=json.dumps(report,indent=2);(out/'report.json').write_text(text);(out/('report-'+str(time.time_ns())+'.json')).write_text(text);print(json.dumps({'passed':report['passed'],'assertions':report['assertions'],'error':report.get('error')}));sys.exit(0 if report['passed'] else 1)

@@ -6,7 +6,7 @@
 
 需要 Go 1.27.3、Python 3、本机 C 编译器和可写 Go cache。设置 `GOWORK=off`、`CGO_ENABLED=1`；`GO` 可选择 Go 可执行文件，显式 `GOROOT` 必须与它匹配，`CC` 选择编译器。
 
-GitHub CI 在 PR 和推送 `main` 时使用原生五平台矩阵、Go 1.27.3、Python 3.14.x；同平台重复构建通过 `setup-go` 的 `go.sum` 键缓存 Go 模块和编译产物，**测试入口、失败条件、证据留存不随缓存命中变化**。主分支上只有矩阵及 Linux 回归全部成功、且仍是当前 `main` 提交时，才会尝试发布 `VERSION` 的 alpha tag。发布使用[当前发行说明](../RELEASE_NOTES.md)，不会重写已存在的 tag/release。
+GitHub CI 在 PR 和推送 `main` 时使用原生五平台矩阵、Go 1.27.3、Python 3.14.x；`setup-go` 按平台、Go 版本、`go.sum`、实际 C 编译器版本和 runner image 指纹缓存 Go 模块及编译产物。指纹位于 checkout 内的 `artifacts/cache/compiler.txt`，参与依赖文件哈希。`go test -race -count=1 ./index` 禁用成功测试结果缓存；所有公共消费者和消融仍实际执行。**测试入口、失败条件、证据留存不随编译缓存命中变化**。主分支上只有矩阵及 Linux 回归全部成功、且仍是当前 `main` 提交时，才会尝试发布 `VERSION` 的 alpha tag。发布使用[当前发行说明](../RELEASE_NOTES.md)，不会重写已存在的 tag/release。
 
 ```sh
 python3 tests/native.py --expected-platform linux/amd64
@@ -39,10 +39,10 @@ python3 tests/e2e.py workspace
 python3 tests/e2e.py retention
 GOFLAGS=-race python3 tests/e2e.py index-race
 GOFLAGS=-race python3 tests/e2e.py workspace-race
-go test -race ./index
+go test -race -count=1 ./index
 ```
 
-`e2e.py` 使用临时独立 Go 模块和本地 replace；仓库交付的 `go.mod` 不包含本机路径。无 replace 的消费验证以 `native.py` 和下述 delivery 入口为准。
+`e2e.py` 使用临时独立 Go 模块和本地 replace；`-trimpath` 去掉编译输入中的临时目录路径，使内容不变的编译任务能复用构建缓存。每次仍显式执行 build 及消费者，不缓存行为报告。仓库交付的 `go.mod` 不包含本机路径。无 replace 的消费验证以 `native.py` 和下述 delivery 入口为准。
 
 查询分配测试用大量符号与小结果上限检测 collect-all 实现；存储测试用大输入的短字符串切片检测全文持有；扫描用例先推进大后台目录，再提升当前目录，检查有界批次内的响应以及最终不漏不重。Application/AppProject 和 Workflow/WorkflowTemplate fixture 的 Argo 提取逻辑位于测试消费者，不进入公共库。
 
@@ -101,6 +101,8 @@ delivery 从 `go.sum` 锁定的真实下载缓存取得依赖及 `.info`，使�
 
 输出位于忽略的 `artifacts/`：普通套件为 `<stage>/report.json`，反例为 `<stage>-ablation/report.json`；独立入口默认使用 `native`、`delivery`、`checkout`、`snapshot`、`vendor-probe`、`native-delivery`、`delivery-failures` 子目录。`consumer/` 和各验证脚本是仓库中的持久输入，运行报告和二进制不作为文档提交。
 
-报告记录命令、环境、工具版本、源码/输入/二进制 hash、期望与断言、stdout/stderr 和退出码；原生报告还包含 module ZIP、manifest、消费者 go.mod/go.sum 与适用许可。零断言、缺报告和空成功入口不通过。
+报告记录命令、环境、工具版本、源码/输入/二进制 hash、期望与断言、stdout/stderr 和退出码；`native.py` 与 `e2e.py` 还记录各命令及整轮的 `elapsedSeconds`。原生来源核验使用三次 Git 命令批量读取提交清单和原始 blob hash，保留逐文件字节校验，并拒绝被删的运行输入。原生报告还包含 module ZIP、manifest、消费者 go.mod/go.sum 与适用许可。零断言、缺报告和空成功入口不通过。
+
+普通消费者先在本轮独立目录编译，按 `consumer-<SHA256>` 保留一份可执行文件，报告的 `retainedBinary` 指向该文件；编译失败不能复用历史二进制。Linux 回归证据先打包为 `toolkit-index-regression.tar.gz`，上传时使用零级压缩，避免再对已压缩包进行压缩。源码/测试输入 ZIP、指定失败断言、历史报告和二进制摘要仍保留；原生五平台的小型证据目录保持直接上传。使用报告和 Actions step 时长分别比较构建、测试与归档，冷缓存和命中缓存的运行分开统计。
 
 本仓验证公共机制及其源码交付。业务资源识别、跨文件跳转、LSP 发布时序、真实编辑器启动时长，由 Argo CD 和 Workflows 仓库各自验证。
