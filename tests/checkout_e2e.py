@@ -29,6 +29,8 @@ try:
    src=ROOT/name
    if src.is_file():
     dst=source/name;dst.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(src,dst)
+  # A non-Go runtime input proves missing files fail provenance, not compilation.
+  fixture='source/provenance fixture.txt';(source/fixture).write_text('committed runtime evidence\n')
   if args.without_attributes:(source/'.gitattributes').unlink(missing_ok=True)
   required(['git','init','--quiet'],source)
   for key,value in [('core.autocrlf','false'),('user.name','Checkout E2E'),('user.email','checkout@example.invalid')]:required(['git','config','--local',key,value],source)
@@ -47,15 +49,24 @@ try:
     for name in manifest['files']:
      blob=required(['git','show','HEAD:'+name],source);packaged=z.read(manifest['module']+'@'+manifest['version']+'/'+name)
      row['files'].append({'path':name,'commitSHA256':hashlib.sha256(blob).hexdigest(),'checkoutSHA256':hashlib.sha256((checkout/name).read_bytes()).hexdigest(),'packagedSHA256':hashlib.sha256(packaged).hexdigest(),'matchesCommit':packaged==blob and (checkout/name).read_bytes()==blob})
-   row['consumerPassed']=r.returncode==0 and observed['passed'] is True and set(observed['stageResults'])=={'source','edit','yaml','audit','budget','retention','resume','resources','index','workspace'}
+   row['consumerPassed']=r.returncode==0 and observed['passed'] is True and set(observed['stageResults'])=={'source','edit','yaml','yamlvalue','schemaquery','audit','budget','retention','resume','resources','index','workspace'}
+   row['provenanceCommands']=[step['argv'][1] for step in observed['steps'] if step['argv'][0]=='git']
+   row['batchedProvenance']=row['provenanceCommands']==['rev-parse','ls-tree','hash-object'] and len(observed['gitProvenance']['files'])==len(manifest['files'])
    row['bytesMatchCommit']=bool(row['files']) and all(x['matchesCommit'] for x in row['files']);save()
-  report['assertions']={'bothCheckoutsConsumed':all(r['consumerPassed'] for r in report['cases']),'allModuleBytesMatchCommit':all(r['bytesMatchCommit'] for r in report['cases']),'sameModuleIdentity':len({r['snapshot']['version'] for r in report['cases']})==1,'sameContractIdentity':len({r['snapshot']['contractSHA256'] for r in report['cases']})==1,'sameZIPIdentity':len({r['snapshot']['zipSHA256'] for r in report['cases']})==1}
+  report['assertions']={'bothCheckoutsConsumed':all(r['consumerPassed'] for r in report['cases']),'allModuleBytesMatchCommit':all(r['bytesMatchCommit'] for r in report['cases']),'batchedProvenance':all(r['batchedProvenance'] for r in report['cases']),'sameModuleIdentity':len({r['snapshot']['version'] for r in report['cases']})==1,'sameContractIdentity':len({r['snapshot']['contractSHA256'] for r in report['cases']})==1,'sameZIPIdentity':len({r['snapshot']['zipSHA256'] for r in report['cases']})==1}
   # An ordinary development run must consume valid, uncommitted source changes.
-  changed=checkout/'source/snapshot.go';changed.write_bytes(changed.read_bytes()+b'\n// Uncommitted checkout E2E input.\n')
+  changed=checkout/'source/snapshot.go';original=changed.read_bytes();changed.write_bytes(original+b'\n// Uncommitted checkout E2E input.\n')
   target=out/'working-tree';r=run([sys.executable,'tests/native.py','--expected-platform','linux/amd64','--output',str(target)],checkout)
   observed=json.loads((target/'report.json').read_text())
   report['workingTree']={'stdout':r.stdout.decode(errors='replace'),'stderr':r.stderr.decode(errors='replace'),'exitCode':r.returncode,'snapshot':observed['snapshot'],'changedInputSHA256':hashlib.sha256(changed.read_bytes()).hexdigest(),'gitDiff':required(['git','diff','--','source/snapshot.go'],checkout).decode()}
   report['assertions']['uncommittedSourceConsumed']=r.returncode==0 and observed['passed'] is True and bool(report['workingTree']['gitDiff']) and observed['snapshot']['version']!=manifest['version']
+  target=out/'dirty-commit';r=run([sys.executable,'tests/native.py','--expected-platform','linux/amd64','--output',str(target),'--source-commit',report['fixtureCommit']],checkout)
+  observed=json.loads((target/'report.json').read_text());report['assertions']['dirtyCommitRejected']=r.returncode!=0 and observed['passed'] is False and observed['assertions'].get('snapshotMatchesCommit') is False and not observed['stageResults'] and observed['gitProvenance']['files']['source/snapshot.go']['matchesCommit'] is False
+  changed.write_bytes(original)
+  missing=checkout/fixture;missing_bytes=missing.read_bytes();missing.unlink()
+  target=out/'missing-runtime-input';r=run([sys.executable,'tests/native.py','--expected-platform','linux/amd64','--output',str(target),'--source-commit',report['fixtureCommit']],checkout)
+  observed=json.loads((target/'report.json').read_text());report['assertions']['missingRuntimeInputRejected']=r.returncode!=0 and observed['passed'] is False and observed['assertions'].get('snapshotMatchesCommit') is False and not observed['stageResults'] and observed['gitProvenance']['files'][fixture]['checkoutObject'] is None
+  missing.write_bytes(missing_bytes)
   target=out/'missing-commit';r=run([sys.executable,'tests/native.py','--expected-platform','linux/amd64','--output',str(target),'--source-commit','0'*40],checkout)
   observed=json.loads((target/'report.json').read_text());report['assertions']['missingCommitRejected']=r.returncode!=0 and observed['passed'] is False and not observed['stageResults']
   shutil.rmtree(checkout/'.git')
