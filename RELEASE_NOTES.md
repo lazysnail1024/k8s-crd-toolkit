@@ -15,7 +15,7 @@
 - Go 1.27.3；YAML parser 需要 CGO 和目标平台的 C 编译器。
 - 支持原生验证：Linux amd64/arm64、macOS amd64/arm64、Windows amd64。
 - 公共库不提供独立 LSP、Zed 扩展、Argo 特定规则、Schema 注册表或集群访问。
-- 两个 Argo 插件现有发行版仍锁定源码提交 `db4adba0093ee2a709356aa1c2517e6d62644745`，不会因本次 tag 自动切换。
+- 两个 Argo 插件当前 `main` 锁定源码提交 `db4adba0093ee2a709356aa1c2517e6d62644745`；此前已发布的 Argo CD `v0.0.1-alpha.4` 和 Workflows `v0.0.1-alpha.3` 仍锁定较早的 `2be4e04dc495`。本次 toolkit tag 不会自动升级任一插件。
 - 如需 vendoring，消费者须额外包含 grammar 的 tree-sitter 头文件及 go-tree-sitter 原生 include/src 来源，并保留第三方许可。
 
 ## 发行验证

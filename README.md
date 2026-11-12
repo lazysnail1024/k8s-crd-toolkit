@@ -57,7 +57,7 @@ func main() {
 ## 与两个 Argo 插件的关系
 
 - [zed-argocd](https://github.com/lazysnail1024/zed-argocd) 和 [zed-argo-workflows](https://github.com/lazysnail1024/zed-argo-workflows) 各自拥有独立 Go LSP、领域语义、版本目录、诊断/重命名策略和 Zed 适配器。
-- 两个插件目前都锁定 toolkit 源码提交 `db4adba0093ee2a709356aa1c2517e6d62644745`（`toolkit-design-5` 合同），并保留自己的来源/合同校验；**发布 alpha tag 不会自动改变它们的依赖**。
+- 两个插件的 `main` 目前都锁定 toolkit 源码提交 `db4adba0093ee2a709356aa1c2517e6d62644745`（`toolkit-design-5` 合同），并保留自己的来源/合同校验；已发布插件仍使用各自发行时的依赖版本，**发布 toolkit alpha tag 不会自动改变它们的依赖**。
 - 使用者可以按 tag 引入库；需要可重现构建的消费者应继续显式锁定审阅过的版本或完整提交、`go.sum` 和必要的原生 C 来源。
 
 各模块的状态所有权及具体集成入口见[当前架构](docs/architecture.md)。
