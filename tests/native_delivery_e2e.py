@@ -44,8 +44,13 @@ try:
     observed=json.loads((target/'report.json').read_text())
     assertions=observed.get('assertions',{})
     passed=(child.returncode==0 and observed.get('passed') is True) if variant=='isolated-source' else (child.returncode!=0 and observed.get('passed') is False)
+    if variant=='wrong-platform':
+     passed=passed and assertions.get('nativeHost') is False and bool(observed.get('goEnvironment')) and not observed.get('stageResults') and 'native platform mismatch' in observed.get('error','')
+    if variant=='missing-compiler':
+     passed=passed and assertions.get('nativeHost') is True and assertions.get('goVersion') is True and not observed.get('stageResults')
+     passed=passed and any(s['argv']==['definitely-not-a-C-compiler','--version'] and s['exitCode']==127 for s in observed.get('steps',[]))
     if variant in ('empty-suite','rss-failure'):
-     passed=passed and assertions.get('noReplace') is True and any('build' in s['argv'] and s['exitCode']==0 for s in observed.get('steps',[]))
+     passed=passed and 'error' not in observed and assertions.get('noReplace') is True and any('build' in s['argv'] and s['exitCode']==0 for s in observed.get('steps',[]))
     if variant=='empty-suite':passed=passed and assertions.get('requiredNonemptySuites') is False
     if variant=='rss-failure':
      passed=passed and observed.get('stageResults',{}).get('resources',{}).get('resident-growth') is False

@@ -10,7 +10,12 @@ import (
 
 var results = map[string]bool{}
 
-func check(name string, ok bool) { results[name] = ok }
+func check(name string, ok bool) {
+	// Shared fixture checks may run more than once. A later success must never
+	// erase the first failure under the same assertion name.
+	previous, exists := results[name]
+	results[name] = ok && (!exists || previous)
+}
 func main() {
 	stage := os.Args[1]
 	if stage == "source" {

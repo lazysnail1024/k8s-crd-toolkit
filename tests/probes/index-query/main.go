@@ -14,15 +14,21 @@ import (
 )
 
 func main() {
-	n, _ := strconv.Atoi(os.Args[1])
-	limit, _ := strconv.Atoi(os.Args[2])
-	queries, _ := strconv.Atoi(os.Args[3])
+	if len(os.Args) != 4 {
+		panic("usage: index-query <files> <limit> <queries>; all must be positive")
+	}
+	n, nErr := strconv.Atoi(os.Args[1])
+	limit, limitErr := strconv.Atoi(os.Args[2])
+	queries, queriesErr := strconv.Atoi(os.Args[3])
+	if nErr != nil || limitErr != nil || queriesErr != nil || n < 1 || limit < 1 || queries < 1 {
+		panic("files, limit and queries must be positive integers")
+	}
 	i, err := index.New(index.Limits{Files: n + 1, Symbols: n + 1, References: 1, Bytes: 128 * 1024 * 1024})
 	if err != nil {
 		panic(err)
 	}
 	order := rand.New(rand.NewSource(19)).Perm(n)
-	expected := make([]source.URI, limit)
+	expected := make([]source.URI, min(n, limit))
 	for j := range expected {
 		expected[j] = source.URI(fmt.Sprintf("file:///fixture/%06d.yaml", j))
 	}
@@ -38,7 +44,9 @@ func main() {
 		}
 	}
 	for j := 0; j < 2; j++ {
-		_, _ = i.Symbols("one-scope", "match", limit)
+		if _, err := i.Symbols("one-scope", "match", limit); err != nil {
+			panic(err)
+		}
 	}
 	runtime.GC()
 	var before, after runtime.MemStats
@@ -59,7 +67,9 @@ func main() {
 	}
 	runtime.ReadMemStats(&after)
 	runtime.KeepAlive(i)
-	json.NewEncoder(os.Stdout).Encode(map[string]any{"n": n, "limit": limit, "queries": queries, "seed": 19, "correct": correct, "queryNanoseconds": int64(elapsed), "totalAllocBytes": after.TotalAlloc - before.TotalAlloc, "mallocs": after.Mallocs - before.Mallocs, "gcCycles": after.NumGC - before.NumGC, "GOMAXPROCS": runtime.GOMAXPROCS(0), "go": runtime.Version()})
+	if err := json.NewEncoder(os.Stdout).Encode(map[string]any{"n": n, "limit": limit, "queries": queries, "seed": 19, "correct": correct, "queryNanoseconds": int64(elapsed), "totalAllocBytes": after.TotalAlloc - before.TotalAlloc, "mallocs": after.Mallocs - before.Mallocs, "gcCycles": after.NumGC - before.NumGC, "GOMAXPROCS": runtime.GOMAXPROCS(0), "go": runtime.Version()}); err != nil {
+		panic(err)
+	}
 	if !correct {
 		os.Exit(1)
 	}

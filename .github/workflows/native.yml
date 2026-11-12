@@ -66,6 +66,8 @@ jobs:
           cache-dependency-path: |
             go.sum
             artifacts/cache/compiler.txt
+            yamlview/**/*.inc
+            yamlview/**/*.h
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.14'
@@ -105,6 +107,8 @@ jobs:
           cache-dependency-path: |
             go.sum
             artifacts/cache/compiler.txt
+            yamlview/**/*.inc
+            yamlview/**/*.h
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.14'
@@ -115,21 +119,11 @@ jobs:
       - name: Exercise concurrent public consumers with race detection
         env:
           GOFLAGS: '-race'
-        run: python tests/e2e.py index-race
-      - name: Verify strict YAML projection baseline
-        run: python tests/e2e.py yamlvalue-comments
-      - name: Verify index and workspace guards with buildable ablations
-        run: >-
-          python tests/ablate.py
-          index-ticket index-reuse index-missing index-position index-fresh index-retention
-          index-prefix index-query-budget index-query-files index-query-scope
-          schemaquery-validation yamlvalue-origin
-          yamlvalue-comment-input yamlvalue-comment-characters yamlvalue-comment-tabs
-          workspace-overlay workspace-ticket workspace-discard
-          workspace-coalescing workspace-fairness workspace-priority
-          workspace-workqueue-fairness workspace-workqueue-followup
-          workspace-membership-complete
-          workspace-complete workspace-filter
+        run: |
+          python tests/e2e.py index-race
+          python tests/e2e.py workspace-race
+      - name: Verify every registered mutation against a passing public baseline
+        run: python tests/ablate.py
       - name: Pack regression evidence without recompressing each file
         if: always()
         shell: bash
@@ -143,10 +137,75 @@ jobs:
           compression-level: 0
           if-no-files-found: error
           retention-days: 30
+  delivery_regression:
+    name: Source delivery and test validity
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CC: gcc-13
+      CGO_ENABLED: '1'
+      GOWORK: 'off'
+      GOTOOLCHAIN: local
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Scope CGO cache to the compiler and runner image
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/cache
+          { "$CC" --version; printf '%s\n' "$ImageOS" "$ImageVersion"; } > artifacts/cache/compiler.txt
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          check-latest: false
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            artifacts/cache/compiler.txt
+            yamlview/**/*.inc
+            yamlview/**/*.h
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.14'
+      - name: Reject false success, stale reports and unrelated mutation failures
+        run: python tests/runner_effectiveness_e2e.py
+      - name: Verify reproducible snapshot and committed checkout bytes
+        run: |
+          python tests/snapshot_e2e.py
+          python tests/checkout_e2e.py
+      - name: Verify restored vendor native inputs
+        run: python tests/vendor_e2e.py
+      - name: Consume an immutable module using an empty offline module cache
+        shell: bash
+        run: |
+          set -euo pipefail
+          export GOMODCACHE="$(go env GOMODCACHE)"
+          python tools/snapshot.py --output artifacts/module-proxy
+          python tests/delivery.py artifacts/module-proxy/manifest.json artifacts/module-proxy
+          git diff --exit-code -- go.mod go.sum
+      - name: Verify isolated delivery and explicit failure reasons
+        run: python tests/native_delivery_e2e.py
+      - name: Reject stale success after delivery infrastructure failures
+        run: python tests/delivery_failures_e2e.py
+      - name: Pack delivery evidence
+        if: always()
+        shell: bash
+        run: tar -I 'gzip -1' -cf "$RUNNER_TEMP/toolkit-delivery-regression.tar.gz" artifacts/
+      - name: Retain delivery evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: toolkit-delivery-regression
+          path: ${{ runner.temp }}/toolkit-delivery-regression.tar.gz
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 30
   release:
     name: Publish alpha after complete main acceptance
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [consumer, index_regression]
+    needs: [consumer, index_regression, delivery_regression]
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:

@@ -43,7 +43,11 @@ func TestSymbolQueryCanceledWhileWaitingForLock(t *testing.T) {
 		}
 		done <- err
 	}()
-	<-ctx.checked
+	select {
+	case <-ctx.checked:
+	case <-time.After(time.Second):
+		t.Fatal("query never reached its cancellation boundary")
+	}
 	cancel()
 	select {
 	case err := <-done:

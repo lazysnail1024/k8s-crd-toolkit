@@ -6,7 +6,7 @@
 
 需要 Go 1.27.3、Python 3、本机 C 编译器和可写 Go cache。设置 `GOWORK=off`、`CGO_ENABLED=1`；`GO` 可选择 Go 可执行文件，显式 `GOROOT` 必须与它匹配，`CC` 选择编译器。
 
-GitHub CI 在 PR 和推送 `main` 时使用原生五平台矩阵、Go 1.27.3、Python 3.14.x；`setup-go` 按平台、Go 版本、`go.sum`、实际 C 编译器版本和 runner image 指纹缓存 Go 模块及编译产物。指纹位于 checkout 内的 `artifacts/cache/compiler.txt`，参与依赖文件哈希。`go test -race -count=1 ./index` 禁用成功测试结果缓存；所有公共消费者和消融仍实际执行。**测试入口、失败条件、证据留存不随编译缓存命中变化**。主分支上只有矩阵及 Linux 回归全部成功、且仍是当前 `main` 提交时，才会尝试发布 `VERSION` 的 alpha tag。发布使用[当前发行说明](../RELEASE_NOTES.md)，不会重写已存在的 tag/release。
+GitHub CI 在 PR 和推送 `main` 时使用原生五平台矩阵、Go 1.27.3、Python 3.14.x；`setup-go` 按平台、Go 版本、`go.sum`、实际 C 编译器版本、runner image 和原生 `.inc`/`.h` 内容缓存 Go 模块及编译产物。编译器指纹位于 checkout 内的 `artifacts/cache/compiler.txt`。`go test -race -count=1 ./index` 禁用成功测试结果缓存；所有公共消费者和消融仍实际执行。**测试入口、失败条件、证据留存不随编译缓存命中变化**。主分支上只有矩阵、Linux 回归及源码交付验证全部成功，且仍是当前 `main` 提交时，才会尝试发布 `VERSION` 的 alpha tag。发布使用[当前发行说明](../RELEASE_NOTES.md)，不会重写已存在的 tag/release。
 
 ```sh
 python3 tests/native.py --expected-platform linux/amd64
@@ -42,7 +42,7 @@ GOFLAGS=-race python3 tests/e2e.py workspace-race
 go test -race -count=1 ./index
 ```
 
-`e2e.py` 使用临时独立 Go 模块和本地 replace；`-trimpath` 去掉编译输入中的临时目录路径，使内容不变的编译任务能复用构建缓存。每次仍显式执行 build 及消费者，不缓存行为报告。仓库交付的 `go.mod` 不包含本机路径。无 replace 的消费验证以 `native.py` 和下述 delivery 入口为准。
+`e2e.py` 使用临时独立 Go 模块和本地 replace；`-trimpath` 去掉编译输入中的临时目录路径，使内容不变的编译任务能复用构建缓存。Go 的 CGO 缓存不会自动跟踪任意 `#include` 的 `.inc` 内容，所以 runner 对 `.inc`/`.h`/`.c` 字节计算 `nativeInputSHA256`，读取所选 Go 工具链的有效 `CGO_CFLAGS` 后追加摘要宏。这样保留默认优化级别，并让仅修改 native include 的消融重新编译。每次仍实际执行消费者；报告不作为测试结果缓存。仓库交付的 `go.mod` 不包含本机路径。`native.py`/`delivery.py` 使用内容摘要确定的不可变 module version，原生输入变化会产生新的 module 身份。
 
 查询分配测试用大量符号与小结果上限检测 collect-all 实现；存储测试用大输入的短字符串切片检测全文持有；扫描用例先推进大后台目录，再提升当前目录，检查有界批次内的响应以及最终不漏不重。Application/AppProject 和 Workflow/WorkflowTemplate fixture 的 Argo 提取逻辑位于测试消费者，不进入公共库。
 
@@ -64,7 +64,7 @@ python3 tests/ablate.py workspace-workqueue-fairness workspace-workqueue-followu
 python3 tests/ablate.py resources retention
 ```
 
-[`ablate.py`](ablate.py) 在隔离的运行源码副本中只去掉一项相关防线，再编译相同独立消费者。必须成功编译并使指定行为断言失败；崩溃、编译错误、超时或无关断言失败不算检出。脚本支持的 variant 名称以其 `variants` 列表为准。
+[`ablate.py`](ablate.py) 先为每个受影响的套件运行一次未修改基线，要求指定断言为真，再在隔离源码副本中只改变一项防线。每个变体必须重新完成构建、正常执行消费者并使指定断言变为假；崩溃、编译错误、超时、空输出、无关断言失败或不存在的旧报告均不算检出。每次使用独立输出目录，报告绑定实际目标目录。未知或重复 variant 直接失败；默认运行 `variants` 注册表中的全部 33 项，CI 不另行维护容易遗漏的部分名称清单。
 
 这种验证证明测试能识别指定错误，不自动证明某个更简单的完整设计不可行。已有完整设计替代实验留下的规则见[经验教训](../docs/lessons-learned.md#3-代码更短仍可能破坏资源上界或当前目录响应)。
 
@@ -93,15 +93,42 @@ python3 tests/delivery_failures_e2e.py
 
 [`snapshot.py`](../tools/snapshot.py) 打包公共运行源码、合同、原生 includes/headers、来源和许可，写入 `manifest.json`，不发布 module。运行 [`delivery.py`](delivery.py) 前，将 `GOMODCACHE` 设为可写绝对路径，并用正常的 `go mod download` 填充依赖缓存。
 
-delivery 从 `go.sum` 锁定的真实下载缓存取得依赖及 `.info`，使用全新 module cache、仅文件代理、`GOSUMDB=off`、`GOWORK=off` 和无 replace 的独立消费者。它运行 `source`、`edit`、`yaml`、`yamlvalue`、`schemaquery`、`audit`、`resources`、`index`、`workspace` 九个交付套件，不读取相邻仓库；缓存缺失应正常下载，不能伪造 metadata。
+delivery 先在临时种子模块中用仓库的 `go.mod`/`go.sum` 下载完整依赖图，并记录实际补全的 sums；这样能取得仅出现在完整图中的 `.info`，不会修改仓库锁文件或被测 module ZIP。随后使用全新 module cache、仅文件代理、`GOSUMDB=off`、`GOWORK=off` 和无 replace 的独立消费者。它运行 `source`、`edit`、`yaml`、`yamlvalue`、`schemaquery`、`audit`、`resources`、`index`、`workspace` 九个交付套件，不读取相邻仓库；缓存缺失应正常下载，不能伪造 metadata。
 
 `native_delivery_e2e.py` 在 Linux 检查隔离源码、空套件、RSS 中间采样失败、平台不符及缺失编译器；`delivery_failures_e2e.py` 检查缺失工具、损坏子报告和超时不能复用旧成功报告，也验证移除 RSS 全样本检查后能检出该反例。
 
+## 有效性审计与正交覆盖
+
+验收分成互补的维度；不把每个交付故障再乘以全部平台，也不把功能正确、取消、资源上界合并成一个“命令返回成功”。已有业务断言及资源阈值全部保留。
+
+| 测试家族与持久入口 | 独立判定依据 | CI 执行位置与边界 |
+|---|---|---|
+| `source`、`edit`：`consumer/main.go` | 固定坐标与编辑后原文字节；非法 revision、重叠、原文不符各自隔离 | 五个平台正常消费；Linux `source`/`edit` 消融 |
+| YAML：`yaml.go`、`audit.go`、`budget.go`、`resume.go` | 固定文档/节点/位置；256/257 深度、文档/字节上限；取消与恢复 | 五个平台正常消费；Linux bytes/depth/scanner-budget 消融 |
+| 投影/查询：`yamlvalue*.go`、`schemaquery.go` | 固定 JSON 值、来源范围、独立 schema 候选；预算失败不冒充空成功 | 五个平台正常消费；Linux origin、validation、注释内容/分配三种消融 |
+| 保留与原生资源：`retention.go`、`audit.go` | 不同成功/错误/取消路径的持有量；实际 RSS 全部采样有效 | 五个平台正常消费；Linux `retention`/`resources` 消融；RSS 读失败与缺失 guard 分别验证 |
+| 索引：`index*.go`、`reuse.go`、`relations.go` | 字面期望位置/引用/顺序；原子 ticket、scope、复用与内存边界 | 五个平台正常消费；Linux race 与所有 index 消融 |
+| Workspace：`workspace.go`、`coordination.go`、`workqueue.go` | 真实文件、打开缓冲区、通知/执行时序、8:4:1 公平性、完整扫描后的对账 | 五个平台正常消费；Linux race 与所有 workspace 消融；Windows 无权限创建 symlink 时记录不可用，其他平台须执行 |
+| 索引锁边界：`index/query_context_test.go` | 写锁仍被持有时取消返回；合同规定的最多 128 次批次访问；generation 不回绕 | Linux `go test -race -count=1 ./index`，启动边界和返回边界都有超时 |
+| 不可变交付：`native.py`、`delivery.py` | 五平台原生身份、完整套件、严格 boolean 输出；独立 module / 无 replace；离线空缓存实际消费 | 五平台 `consumer` 与 Linux `delivery_regression`；delivery 的九个套件缺一即失败 |
+| 字节与包装：`checkout_e2e.py`、`snapshot_e2e.py`、`vendor_e2e.py` | Git blob 为 checkout 真值；跨 ZIP 元数据/顺序/压缩环境不变；恢复 headers 后实际 vendor 构建 | Linux `delivery_regression`；ZIP 确定性不替代 native 的源码清单/消费验证 |
+| 失败路径：`native_delivery_e2e.py`、`delivery_failures_e2e.py` | 每个负例必须失败于指定阶段；先保留成功 sentinel，再执行失败重跑 | Linux `delivery_regression`；平台不符不能由缺 Go、缺编译器不能由任意别的错误代替 |
+| Runner 合同：`runner_effectiveness_e2e.py`、`assertions.py` | 受控真实子进程，逐次只改变一个条件，验证判定器自身不会假通过 | Linux `delivery_regression`；协议夹具不计入公共 API 行为证明 |
+| 观察探针：`probes/index-query`、`probes/index-scope` | 实际执行量、固定排序/计数；零查询、非法参数须拒绝 | Linux 验证探针可构建及参数边界；时间/分配数仅作观察，不能替代消费者中的资源断言 |
+
+```sh
+python3 tests/runner_effectiveness_e2e.py
+```
+
+Runner 的表驱动用例覆盖：合法 boolean 对照、空/非对象/字符串/数值输出、重复 JSON 键、输出和退出码矛盾；基线失败、缺失/损坏报告、错误目标目录、构建/工具失败及无关断言失败；未知/重复变体；缺 Go 时不得复用上轮成功检出记录。另执行实际消费者的 `check` 累积逻辑，确认同名 fixture 后续成功不能覆盖先前失败。探针先构建一次再测试参数边界，避免把编译失败误算成“参数被拒绝”。
+
+`source`/`edit` 的失效保护、CGO scanner-budget、原生资源释放及 context 持有消融，与原有 index/workspace 消融在同一个默认注册表中执行。一个基线可以为同套件的多个独立变体复用；每个变体仍用独立源码和消费者进程，不减少被测行为。`index-race` 与 `workspace-race` 分别检查各自并发机制，正常五平台套件继续保留完整行为验收。
+
 ## 输出与结论范围
 
-输出位于忽略的 `artifacts/`：普通套件为 `<stage>/report.json`，反例为 `<stage>-ablation/report.json`；独立入口默认使用 `native`、`delivery`、`checkout`、`snapshot`、`vendor-probe`、`native-delivery`、`delivery-failures` 子目录。`consumer/` 和各验证脚本是仓库中的持久输入，运行报告和二进制不作为文档提交。
+输出位于忽略的 `artifacts/`：普通套件为 `<stage>/report.json`，消融为 `ablations/<runID>/<variant>/report.json`，同轮基线为 `baseline-<suite>`；`ablations/report.json` 保存最新汇总。独立入口默认使用 `native`、`delivery`、`checkout`、`snapshot`、`vendor-probe`、`native-delivery`、`delivery-failures`、`runner-effectiveness` 子目录。`consumer/` 和各验证脚本是仓库中的持久输入，运行报告和二进制不作为文档提交。
 
-报告记录命令、环境、工具版本、源码/输入/二进制 hash、期望与断言、stdout/stderr 和退出码；`native.py` 与 `e2e.py` 还记录各命令及整轮的 `elapsedSeconds`。原生来源核验使用三次 Git 命令批量读取提交清单和原始 blob hash，保留逐文件字节校验，并拒绝被删的运行输入。原生报告还包含 module ZIP、manifest、消费者 go.mod/go.sum 与适用许可。零断言、缺报告和空成功入口不通过。
+报告记录命令、环境、工具版本、源码/输入/二进制 hash、期望与断言、stdout/stderr 和退出码；`native.py` 与 `e2e.py` 还记录各命令及整轮的 `elapsedSeconds`。原生来源核验使用三次 Git 命令批量读取提交清单和原始 blob hash，保留逐文件字节校验，并拒绝被删的运行输入。原生报告还包含 module ZIP、manifest、消费者 go.mod/go.sum 与适用许可。断言必须是非空对象、非空名称及真实 JSON boolean；重复键、字符串 `"false"`、零断言、缺报告和空成功入口不通过。
 
 普通消费者先在本轮独立目录编译，按 `consumer-<SHA256>` 保留一份可执行文件，报告的 `retainedBinary` 指向该文件；编译失败不能复用历史二进制。Linux 回归证据先打包为 `toolkit-index-regression.tar.gz`，上传时使用零级压缩，避免再对已压缩包进行压缩。源码/测试输入 ZIP、指定失败断言、历史报告和二进制摘要仍保留；原生五平台的小型证据目录保持直接上传。使用报告和 Actions step 时长分别比较构建、测试与归档，冷缓存和命中缓存的运行分开统计。
 

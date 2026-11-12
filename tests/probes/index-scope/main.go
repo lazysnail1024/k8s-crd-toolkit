@@ -20,6 +20,9 @@ func heap() uint64 {
 }
 
 func main() {
+	if len(os.Args) != 2 {
+		panic("usage: index-scope <positive file count>")
+	}
 	count, err := strconv.Atoi(os.Args[1])
 	if err != nil || count < 1 {
 		panic("positive file count required")
