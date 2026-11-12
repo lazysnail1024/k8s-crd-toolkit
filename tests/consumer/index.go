@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -21,6 +22,7 @@ func indexCases() {
 	indexIdentityCases()
 	indexSymbolOrderCases()
 	indexPrefixCases()
+	indexQueryContextCases()
 	indexSymbolAllocationCase()
 	indexScopeMoveCases()
 	indexCopyCases()
@@ -258,6 +260,12 @@ func indexSymbolOrderCases() {
 			}
 		}
 		check(fmt.Sprintf("workspace-symbol-stable-top-%d", limit), valid)
+		bounded, boundedErr := i.SymbolsWithPrefixContext(context.Background(), "search", "", "match-", limit, 100)
+		valid = boundedErr == nil && bounded.Complete && len(bounded.Items) == min(limit, len(want)) && bounded.Truncated == (len(want) > limit) && bounded.State.Pending == 1
+		for n, item := range bounded.Items {
+			valid = valid && n < len(want) && string(item.URI)+"#"+string(item.Symbol.ID) == want[n]
+		}
+		check(fmt.Sprintf("query-context-stable-top-%d", limit), valid)
 	}
 	result, err := i.Symbols("search", "MATCH-", 5)
 	check("workspace-symbol-no-match-not-truncated", err == nil && len(result.Items) == 0 && !result.Truncated)

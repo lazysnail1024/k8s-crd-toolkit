@@ -26,7 +26,7 @@ python3 tests/native.py --expected-platform linux/amd64
 | `schemaquery`；[`schemaquery.go`](consumer/schemaquery.go) | 非 Argo schema、引用/组合分支、有限兄弟约束、候选验证、oneOf、预算和显式未支持状态 |
 | `budget`、`resume`；[`budget.go`](consumer/budget.go)、[`resume.go`](consumer/resume.go) | 输入/文档/深度边界、scanner 序列化、分片恢复及取消 |
 | `retention`、`resources`；[`retention.go`](consumer/retention.go)、[`main.go`](consumer/main.go) | 成功/错误/取消后的 context 持有、原生对象释放和 RSS 增长 |
-| `index`；[`index.go`](consumer/index.go)、[`relations.go`](consumer/relations.go)、[`reuse.go`](consumer/reuse.go) | 票据时效、缺失目标、候选歧义、位置与语义失效、scope、容量、摘要所有权、查询与复用分配 |
+| `index`；[`index.go`](consumer/index.go)、[`index_context.go`](consumer/index_context.go)、[`relations.go`](consumer/relations.go)、[`reuse.go`](consumer/reuse.go) | 票据时效、缺失目标、候选歧义、位置与语义失效、scope、容量、摘要所有权、查询与复用分配；符号查询文件/符号访问预算、取消、scope 变化、空 scope 和成员迁移 |
 | `workspace`；[`workspace.go`](consumer/workspace.go)、[`coordination.go`](consumer/coordination.go)、[`workqueue.go`](consumer/workqueue.go) | 打开缓冲区、读取消、通知合并、公平性、执行预约、扫描优先与续扫、完成度和对账 |
 
 选择需要的阶段运行，例如：
@@ -37,11 +37,14 @@ python3 tests/e2e.py workspace
 python3 tests/e2e.py retention
 GOFLAGS=-race python3 tests/e2e.py index-race
 GOFLAGS=-race python3 tests/e2e.py workspace-race
+go test -race ./index
 ```
 
 `e2e.py` 使用临时独立 Go 模块和本地 replace；仓库交付的 `go.mod` 不包含本机路径。无 replace 的消费验证以 `native.py` 和下述 delivery 入口为准。
 
 查询分配测试用大量符号与小结果上限检测 collect-all 实现；存储测试用大输入的短字符串切片检测全文持有；扫描用例先推进大后台目录，再提升当前目录，检查有界批次内的响应以及最终不漏不重。Application/AppProject 和 Workflow/WorkflowTemplate fixture 的 Argo 提取逻辑位于测试消费者，不进入公共库。
+
+`index_context.go` 的公开消费者使用真实 Index 与可取消 context，验证零匹配、pending/零符号文件也消耗预算，预算耗尽不交付部分结果；查询中同 scope 修改及 remove/recreate 拒绝过时结果，不相关 scope 的修改不使查询失效。跨 scope 迁移时，失败 Commit 不得发布旧位置，原 ticket 仍能重试。50,000 个零符号文件配合小预算的分配检查，防止先复制全部 URI 再分页。`index/query_context_test.go` 只补充无法从外部精确控制的边界：持有 provider 写锁时取消仍能返回、单批不得扫描超过 128 次访问、generation 耗尽后拒绝变更而非回绕。它不替代独立消费者或插件真实 LSP 验收。
 
 尾注释投影测试先构建并解析一个恰好 5 MiB、语义值很小的快照，再测三次 `yamlvalue.Project` 的 `TotalAlloc` 增量，总量须小于 3 MiB；不把 snapshot/CST 分配混入投影测量，也不依赖机器速度。把 Project 输入恢复为完整原范围的消融仍须编译并返回正确值，但必须因重复扫描大注释触发指定分配失败。literal/folded 标量、显式缩进、CRLF、多文档、Unicode 换行和非法字符另有固定行为期望，防止性能优化吞掉内容或错误。
 
@@ -53,6 +56,7 @@ GOFLAGS=-race python3 tests/e2e.py workspace-race
 python3 tests/ablate.py
 python3 tests/ablate.py index-ticket index-reuse index-retention
 python3 tests/ablate.py index-prefix schemaquery-validation yamlvalue-origin
+python3 tests/ablate.py index-query-budget index-query-files index-query-scope
 python3 tests/ablate.py yamlvalue-comment-input yamlvalue-comment-characters yamlvalue-comment-tabs
 python3 tests/ablate.py workspace-workqueue-fairness workspace-workqueue-followup workspace-membership-complete
 python3 tests/ablate.py resources retention
