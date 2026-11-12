@@ -152,9 +152,9 @@ Scanner 不跟随根以下的符号链接；根本身为符号链接会产生显
 
 ## 两个插件的实际引用与隔离
 
-两个语言服务器将公共包编译进各自 Go 程序，通过同一 Go module 源码提交接入；各自实例化 Documents、Index、WorkQueue 等，没有共享进程、缓存、文件表或 CD ↔ Workflows 的直接依赖。同一 source pin 和合同保证实现与 API 约定一致，不提供跨插件自动跳转或共享资源语义。实际模块提交与 Go pseudo-version 以各消费者的 [Argo CD 锁文件](https://github.com/lazysnail1024/zed-argocd/blob/main/contracts/toolkit.lock.json)和 [Workflows 锁文件](https://github.com/lazysnail1024/zed-argo-workflows/blob/main/contracts/toolkit.lock.json)为准，文档不另外维护可漂移的实现版本副本。当前接口合同为 `toolkit-design-5`；新 API 的实际采用以消费者源码与锁文件为准。消费者同步保存合同原文与 SHA-256、模块完整 Git SHA、Go sums 和 vendor 文件清单；引用方式是 `go-module-commit`，无需 alpha tag 或 release。
+两个语言服务器将公共包编译进各自 Go 程序，通过同一 Go module 源码提交接入；各自实例化 Documents、Index、WorkQueue 等，没有共享进程、缓存、文件表或 CD ↔ Workflows 的直接依赖。同一 source pin 和合同保证实现与 API 约定一致，不提供跨插件自动跳转或共享资源语义。实际模块提交与 Go pseudo-version 以各消费者的 [Argo CD 锁文件](https://github.com/lazysnail1024/zed-argocd/blob/main/contracts/toolkit.lock.json)和 [Workflows 锁文件](https://github.com/lazysnail1024/zed-argo-workflows/blob/main/contracts/toolkit.lock.json)为准。当前两个消费者共同固定 `db4adba0093ee2a709356aa1c2517e6d62644745`（Go pseudo-version `v0.0.0-20261112033740-db4adba0093e`）和 `toolkit-design-5` 合同；消费者同步保存合同原文与 SHA-256、模块完整 Git SHA、Go sums 和 vendor 文件清单。引用方式是 `go-module-commit`；公共库发布 alpha tag 不会使它们自动升级。
 
-源码 pin 锁定实现，合同摘要锁定接口约定，`go.sum` 及消费者 vendored 文件清单锁定实际依赖内容。公共仓文档更新或分支前进不会自动升级插件。升级需在消费者显式更新这些锁、恢复并校验 CGO 支持文件，再跑消费者回归；不能以合同 ID 相同替代实现校验。
+源码 pin 锁定实现，合同摘要锁定接口约定，`go.sum` 及消费者 vendored 文件清单锁定实际依赖内容。公共仓文档更新、发布 tag 或分支前进不会自动升级插件。升级需在消费者显式更新这些锁、恢复并校验 CGO 支持文件，再跑消费者回归；不能以合同 ID 相同替代实现校验。
 
 | 边界 | Argo CD 消费者 | Workflows 消费者 |
 |---|---|---|
@@ -172,3 +172,14 @@ Scanner 不跟随根以下的符号链接；根本身为符号链接会产生显
 公共库通过独立 Go 消费者验证 API、竞争条件、容量、内存持有和发现响应；真实 Argo YAML fixture 仅证明消费者可以在公共机制上构造事实。源码快照、原生平台和故障注入的入口见[验证指南](../tests/README.md)。
 
 当前文件优先与关联目录工作量由公共测试覆盖；编辑器启动耗时、LSP 通知/请求顺序、业务导航及诊断一致性由两个插件各自的集成测试负责。任何“全工作区完整”或启动时长结论，都必须有对应消费者运行的证据。
+
+## 当前 CI 与 alpha 发布门槛
+
+本仓是源码库，不生成 LSP 二进制，交付对象是 GitHub 源码 tag/Go Module。当前 `VERSION` 记录待发布 alpha；[发行说明](../RELEASE_NOTES.md)列出当前可用能力和限制。
+
+- PR 与每次 `main` 推送均运行同一份 [native.yml](../.github/workflows/native.yml)：五平台本机编译/执行独立公共消费者，以及 Linux Go vet、race、真实 YAML 基线与 buildable ablation。
+- 源码验收要求提交 hash 与构建输入按字节匹配，验证无本地 Go Module `replace`；artifact 保留输入、报告和失败证据，不能把某个平台的交叉编译当作另一个平台的执行证明。
+- `main` 上的发行 Job 依赖上述所有必选 Job 成功，并再次核对待发布的提交仍是远端 `main`；同名 release 已存在则不重复发布、tag 已存在但缺 release 则拒绝覆盖。PR 不授予发行写权限。
+- CI 性能优化使用 `setup-go` 对 Go 模块与构建缓存的官方支持，Python 按 3.14 minor 选用 runner 可用的 patch 版本；它们只复用工具链/构建缓存，**不跳过**原生或消融测试。新缓存首次未命中时不承诺加速。
+
+发布成功并不替代下游两个插件的真实 CLI/LSP/Zed 验收。两插件现有依赖不会因为这个发行 Job 而修改。

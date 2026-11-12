@@ -6,6 +6,8 @@
 
 需要 Go 1.27.3、Python 3、本机 C 编译器和可写 Go cache。设置 `GOWORK=off`、`CGO_ENABLED=1`；`GO` 可选择 Go 可执行文件，显式 `GOROOT` 必须与它匹配，`CC` 选择编译器。
 
+GitHub CI 在 PR 和推送 `main` 时使用原生五平台矩阵、Go 1.27.3、Python 3.14.x；同平台重复构建通过 `setup-go` 的 `go.sum` 键缓存 Go 模块和编译产物，**测试入口、失败条件、证据留存不随缓存命中变化**。主分支上只有矩阵及 Linux 回归全部成功、且仍是当前 `main` 提交时，才会尝试发布 `VERSION` 的 alpha tag。发布使用[当前发行说明](../RELEASE_NOTES.md)，不会重写已存在的 tag/release。
+
 ```sh
 python3 tests/native.py --expected-platform linux/amd64
 ```

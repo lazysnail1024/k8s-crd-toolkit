@@ -1,9 +1,15 @@
 name: Native public consumer
 on:
+  push:
+    branches:
+      - main
   pull_request:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: toolkit-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   consumer:
     strategy:
@@ -44,14 +50,17 @@ jobs:
       GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           check-latest: false
-          cache: false
+          cache: true
+          cache-dependency-path: go.sum
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.14.0'
+          python-version: '3.14'
       - name: Build and run independent native consumer
         run: python tests/native.py --expected-platform "${{ matrix.platform }}" --cc-version "${{ matrix.cc_version }}" --source-commit "${{ github.sha }}"
       - name: Retain failure and success evidence
@@ -72,14 +81,17 @@ jobs:
       GOTOOLCHAIN: local
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
           check-latest: false
-          cache: false
+          cache: true
+          cache-dependency-path: go.sum
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: '3.14.0'
+          python-version: '3.14'
       - name: Vet public packages
         run: go vet ./...
       - name: Verify bounded query lock boundaries
@@ -110,3 +122,47 @@ jobs:
           path: artifacts/
           if-no-files-found: error
           retention-days: 30
+  release:
+    name: Publish alpha after complete main acceptance
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [consumer, index_regression]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - name: Release only the fully accepted main commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=$(tr -d '\r\n' < VERSION)
+          if [[ ! "$version" =~ ^0\.0\.1-alpha\.[0-9]+$ ]]; then
+            echo "VERSION is not an approved 0.0.1 alpha: $version" >&2
+            exit 1
+          fi
+          tag="v${version}"
+          current_main=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')
+          if [[ "$current_main" != "$GITHUB_SHA" ]]; then
+            echo "Main advanced since this CI run; the newer run owns publication."
+            exit 0
+          fi
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Existing release $tag remains unchanged."
+            exit 0
+          fi
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
+            echo "Tag $tag already exists without a release; refusing to overwrite it." >&2
+            exit 1
+          fi
+          gh release create "$tag" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "k8s-crd-toolkit ${version}" \
+            --notes-file RELEASE_NOTES.md \
+            --prerelease
