@@ -19,7 +19,7 @@ go get github.com/lazysnail1024/k8s-crd-toolkit@"$TOOLKIT_COMMIT"
 | `yamlvalue` | 严格 YAML 有效值、alias/merge 有界投影、exact/derived/ambiguous 来源与共享 anchor |
 | `schemaquery` | 查询调用方已有的 jsonschema/v6 编译图，提供字段、类型、分支及有限候选 |
 | `edit` | 基础 revision、原文和区间重叠校验，原子生成新快照 |
-| `index` | 平铺定义/引用、缺失目标的反向依赖、过时结果拒绝、摘要复用和有界符号查询 |
+| `index` | 平铺定义/引用、缺失目标的反向依赖、过时结果拒绝、摘要复用和可取消、按访问量计费的符号查询 |
 | `workspace` | 权威打开缓冲区、读票据、工作队列、扫描轮次对账和可续扫的目录发现 |
 
 从当前打开文件开始处理，并让关联目录优先于后台发现。索引事实是摘要；目录扫描完成与业务分析完成需要分别判断。公共库不访问集群或写入用户文件。

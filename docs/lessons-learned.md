@@ -2,6 +2,16 @@
 
 本文按问题记录已经发现的实现负担、已复现的依赖行为和被实际实验否决的方案。实验反例不代表线上事故；每项保留当前约束和仍可运行的回归入口。模块职责见[当前架构](architecture.md)，执行命令见[验证指南](../tests/README.md)。
 
+## 查询结果少，不代表查询工作量少
+
+**发生的问题。** 静态审查确认原 `SymbolsWithPrefix` 只限制结果 heap，低命中和零命中仍在一个读锁内检查整个 scope；外层请求的 context 不能打断这次内层扫描。Workflows 的展示符号还曾在 catalog 锁内复制并排序所有 URI。这里区分源码可确认的边界缺口与实际工作区的延迟，不能把未测量的用户规模描述为已复现耗时事故。
+
+**当前处理。** 新 `SymbolsWithPrefixContext` 分开结果数量和文件/符号访问量，以既有 membership 链接保存位置，每批最多 128 次访问、锁外匹配和排序、可取消等锁。查询 scope generation 变化拒收结果，不相关 scope 变化不使查询重启；错误不交付部分 Items。旧 API 仍兼容，真实交互式效果取决于消费者是否迁移并去掉自己外层的长锁。
+
+**回归入口。** [`index_context.go`](../tests/consumer/index_context.go) 检查小预算、零匹配、pending 文件、取消、scope 变化与小预算下不复制全表；锁边界由 `go test -race ./index` 补充。`index-query-budget`、`index-query-files`、`index-query-scope` 消融分别移除预算、防漏计文件和返回前 generation 复核，必须编译成功并命中指定行为断言。高预算是兼容合法容量，不是性能改善的证据；锁持有期、可取消性和真实 LSP 的响应仍应分别验证。
+
+**减法实验留下的边界。** 删除重复的 scope 指针栅栏，只保留不会回绕或复用的 generation；membership 直接借用已有 entry，去掉重复 URI 和逐符号 files-map 查询。两项等价替代均通过公开消费者与 race 检查，跨 scope pending、失败 Commit 后继续 pending、删除重建仍受保护。另两项“更短”的替代未采用：删除批间 `Gosched` 后功能仍通过，但 Linux/amd64、Go 1.27.3、单 P 的 1ms 定时取消在本地 100,000 符号实验中由约 1–2ms 延至 10–27ms，恢复后回落；将新旧查询合用 eager heap 后输出也正确，却使旧 API 的 100,000 结果查询每次多约 100,000 次分配、12.8MB 临时分配。当前保留批间调度机会，以及旧 API 的 lazy heap 和新 API 可取消的逐步排序。延迟数字只描述该实验，不是跨机器时限；测试通过不等于所有替代设计都值得采用。
+
 ## 1. 引用文件不应被迫声明人工 owner
 
 **发生的问题：API 设计负担。** 原先的符号父子树与引用 owner 要求，让只包含跨文件引用的 YAML 必须额外构造没有业务含义的声明。关联查询真正需要的是目标 key 和引用位置，人工 owner 增加了提取、校验及迁移代码。相关设计消融与实现见 [PR #1](https://github.com/lazysnail1024/k8s-crd-toolkit/pull/1)。

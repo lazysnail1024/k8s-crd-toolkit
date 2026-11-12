@@ -6,6 +6,9 @@ variants=[('source','source/snapshot.go','next <= s.revision','false','revision'
 variants.append(('retention','yamlview/internal/parser/parser.go','t = p.Parse(data, nil)','t = p.ParseWithOptions(func(i int, _ sitter.Point) []byte { if i >= len(data) { return nil }; return data[i:] }, nil, &sitter.ParseOptions{ProgressCallback: func(s sitter.ParseState) bool { return ctx.Err() != nil || yaml.Exceeded() }})','success-context-released'))
 variants.extend([
  ('index-prefix','index/query.go','!strings.HasPrefix(string(s.Key), string(prefix))','false','prefix-before-limit'),
+ ('index-query-budget','index/query_context.go','if used == budget {','if false {','query-no-match-budget'),
+ ('index-query-files','index/query_context.go','used++ // A pending or symbol-free file still costs one visit.','// File visits deliberately uncharged.','query-pending-files-cost-work'),
+ ('index-query-scope','index/query_context.go','valid := i.symbolScopeUnchanged(scope, result.State.Generation)','valid := true','query-final-scope-change-rejected'),
  ('schemaquery-validation','schemaquery/query.go','valid := s.Validate(value) == nil','valid := true','schemaquery-leaf-validation'),
  ('yamlvalue-origin','yamlvalue/project.go','copy.Kind = "derived"','copy.Kind = "exact"','derived-use-location'),
  ('yamlvalue-comment-input','yamlvalue/project.go','raw, err := documentText(snapshot, span)','span = doc.Span()\n\traw, err := documentText(snapshot, span)','trailing-comments-project-allocation'),

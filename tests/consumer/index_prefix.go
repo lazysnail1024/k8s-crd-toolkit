@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/lazysnail1024/k8s-crd-toolkit/index"
@@ -26,6 +27,8 @@ func indexPrefixCases() {
 	check("prefix-unfiltered-bound", err == nil && all.Truncated && len(all.Items) == 1 && all.Items[0].URI == "file:///a.yaml")
 	selected, err := i.SymbolsWithPrefix("scope", "wanted/", "candidate", 1)
 	check("prefix-before-limit", err == nil && !selected.Truncated && len(selected.Items) == 1 && selected.Items[0].URI == "file:///z.yaml")
+	bounded, err := i.SymbolsWithPrefixContext(context.Background(), "scope", "wanted/", "candidate", 1, 1004)
+	check("query-context-prefix-before-limit", err == nil && bounded.Complete && !bounded.Truncated && bounded.Work == 1004 && len(bounded.Items) == 1 && bounded.Items[0].URI == "file:///z.yaml")
 	missing, err := i.SymbolsWithPrefix("scope", "wanted/", "absent", 1)
 	check("prefix-and-name", err == nil && !missing.Truncated && len(missing.Items) == 0)
 	_, err = commitIndexFile(i, "file:///zz.yaml", "scope", 1, facts)

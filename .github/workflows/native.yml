@@ -82,6 +82,8 @@ jobs:
           python-version: '3.14.0'
       - name: Vet public packages
         run: go vet ./...
+      - name: Verify bounded query lock boundaries
+        run: go test -race ./index
       - name: Exercise concurrent public consumers with race detection
         env:
           GOFLAGS: '-race'
@@ -92,7 +94,8 @@ jobs:
         run: >-
           python tests/ablate.py
           index-ticket index-reuse index-missing index-position index-fresh index-retention
-          index-prefix schemaquery-validation yamlvalue-origin
+          index-prefix index-query-budget index-query-files index-query-scope
+          schemaquery-validation yamlvalue-origin
           yamlvalue-comment-input yamlvalue-comment-characters yamlvalue-comment-tabs
           workspace-overlay workspace-ticket workspace-discard
           workspace-coalescing workspace-fairness workspace-priority

@@ -85,6 +85,10 @@ Project 只把 `ContentSpan` 用于解码输入，避免多个分析阶段重复
 
 `Symbols` 按名字做区分大小写的子串匹配；`SymbolsWithPrefix` 先按不透明 key 前缀过滤，再应用结果上限。kind/namespace 编码由调用方决定，避免先截断全域候选再筛选而漏掉真正相关资源。两者按 URI、span、ID 稳定排序，保留至多 `limit` 个候选并显式返回 `Truncated`。实现使用有界 heap，仍需遍历已知候选；它不提供任意工作区的固定耗时保证。
 
+交互式路径使用 [`SymbolsWithPrefixContext`](../index/query_context.go)，分别传入结果上限和总访问预算。每个文件（含 pending、零符号）和每个被检查的符号（含零匹配）各计一次 Work；耗尽预算、取消或查询 scope 变化时返回明确错误、`Complete=false` 和空 Items，不自动重试。`Complete` 只说明已知索引遍历完成，不是目录发现完整；结果仍可能 `Truncated`。
+
+scope 原有 membership map 的值带有前后链接，直接借用现有 file entry，不重复保存 URI 或为每个符号重新查询 files map。查询在批次间只保留一个文件/符号位置，不复制全表 URI、不新增完整符号存储。每次读锁最多覆盖 128 次访问；prefix/name 匹配、有界 heap 与最终排序均在锁外。等锁用可取消的短退避，结果处理逐步检查 context。查询 scope 的 generation 在每批及返回前复核；变更序列到顶会拒绝变更，不回绕、不重复，因而无需再传递 scope 指针身份；其他 scope 的写入不影响该游标。空 scope 在新 API 中 generation 为 0，旧查询的 generation 语义保持不变。消费者仍需在 LSP 发布时复核自己使用的配置、输入和索引证明。
+
 `State.Pending == 0` 仅说明已知文件没有等待替换。扫描完整、读入成功、配置稳定、下游分析结束、目标唯一性均需消费者的额外证据。
 
 ## workspace：输入与工作生命周期
@@ -148,7 +152,7 @@ Scanner 不跟随根以下的符号链接；根本身为符号链接会产生显
 
 ## 两个插件的实际引用与隔离
 
-两个语言服务器将公共包编译进各自 Go 程序，通过同一 Go module 源码提交接入；各自实例化 Documents、Index、WorkQueue 等，没有共享进程、缓存、文件表或 CD ↔ Workflows 的直接依赖。同一 source pin 和合同保证实现与 API 约定一致，不提供跨插件自动跳转或共享资源语义。实际模块提交与 Go pseudo-version 以各消费者的 [Argo CD 锁文件](https://github.com/lazysnail1024/zed-argocd/blob/main/contracts/toolkit.lock.json)和 [Workflows 锁文件](https://github.com/lazysnail1024/zed-argo-workflows/blob/main/contracts/toolkit.lock.json)为准，文档不另外维护可漂移的实现版本副本。当前接口合同为 `toolkit-design-4`。消费者同步保存合同原文与 SHA-256、模块完整 Git SHA、Go sums 和 vendor 文件清单；引用方式是 `go-module-commit`，无需 alpha tag 或 release。
+两个语言服务器将公共包编译进各自 Go 程序，通过同一 Go module 源码提交接入；各自实例化 Documents、Index、WorkQueue 等，没有共享进程、缓存、文件表或 CD ↔ Workflows 的直接依赖。同一 source pin 和合同保证实现与 API 约定一致，不提供跨插件自动跳转或共享资源语义。实际模块提交与 Go pseudo-version 以各消费者的 [Argo CD 锁文件](https://github.com/lazysnail1024/zed-argocd/blob/main/contracts/toolkit.lock.json)和 [Workflows 锁文件](https://github.com/lazysnail1024/zed-argo-workflows/blob/main/contracts/toolkit.lock.json)为准，文档不另外维护可漂移的实现版本副本。当前接口合同为 `toolkit-design-5`；新 API 的实际采用以消费者源码与锁文件为准。消费者同步保存合同原文与 SHA-256、模块完整 Git SHA、Go sums 和 vendor 文件清单；引用方式是 `go-module-commit`，无需 alpha tag 或 release。
 
 源码 pin 锁定实现，合同摘要锁定接口约定，`go.sum` 及消费者 vendored 文件清单锁定实际依赖内容。公共仓文档更新或分支前进不会自动升级插件。升级需在消费者显式更新这些锁、恢复并校验 CGO 支持文件，再跑消费者回归；不能以合同 ID 相同替代实现校验。
 
