@@ -107,3 +107,19 @@
 **已验证的边界。** 审阅复现了 CST 把 NEL/LS/PS 后的字段包含在 comment 内、但严格 YAML 解码器仍把它解释为字段的差异；非法控制字符也可能被 CST 接受，却必须由严格解码器拒绝。因此只省略 ASCII 可打印字符注释；非 ASCII 一律保留原路径。可编译消融还发现，注释之间带 TAB 的空行会被 YAML-to-JSON 解码器拒绝，不能作为普通空白删除。含任意 TAB 的文档都保留完整范围，不再复制一套缩进语法来猜测哪些 TAB 可以删除。普通字符串删尾、正则删 `#`、删尾空白或按叶节点结束位置裁剪均不能提供这个证明。
 
 **回归入口。** [`yamlvalue_comments.go`](../tests/consumer/yamlvalue_comments.go) 校验 literal/folded chomping、字面 `#`、flow 闭括号、null、tag、merge、显式文档边界、CRLF、多文档位置、Unicode 换行、非法字符和完整原文错配。5 MiB 尾注释快照先完成 CST 解析，再单独测 Project 分配；`yamlvalue-comment-input` 可编译消融恢复全范围解码，必须命中分配断言；`yamlvalue-comment-characters` 移除字符防线，必须命中真实 Unicode 字段丢失断言；`yamlvalue-comment-tabs` 移除全篇 TAB 检查，必须命中原始 TAB 输入拒绝断言。资源阈值属于验证条件，不构成任意工作区的耗时保证；整个请求的原期限仍由真实消费者验收。
+
+## 12. 子进程失败，不等于测试检出了故障
+
+**发生的问题。** 消融脚本曾不检查子进程的本轮报告来源。保留一个旧的 `revision: false` 报告后，把 `GO` 指向不存在的文件，消费者完全没有构建，外层消融仍返回成功。普通消费者 runner 也曾只检查退出码；空对象、字符串 `"false"` 等内容没有独立判定。同名 fixture 检查直接赋值还可能让后续成功覆盖先前失败。
+
+**当前处理。** 每轮先写失败态收据，消融使用独立目标及输出目录；基线通过、指定断言为真是变体执行的前提。变体必须成功编译、执行退出 1、解析出真实 boolean 断言，并使指定项变为假。缺工具、编译失败、超时、崩溃和无关失败不能替代该证据。所有消费者入口使用同一严格 JSON 合同；同名检查按逻辑与累积。
+
+**回归入口。** [`runner_effectiveness_e2e.py`](../tests/runner_effectiveness_e2e.py) 以单条件变化的受控子进程验证上述判定，不把协议夹具计为产品行为测试。平台/编译器负例还检查具体失败阶段。完整源码交付、vendor、checkout 及这些负控制现在由独立 Linux CI job 执行，并作为发布依赖；五平台真实公共消费者仍全部保留。
+
+## 13. 修改 native include 后，缓存可能仍执行原实现
+
+**发生的问题。** 开启临时路径消除与 Go 编译缓存后，仅改变 `scanner.c.inc` 的 `budget` 消融曾继续通过全部深度断言。在同一缓存中，给 CGO preamble 加一条无语义注释强制重编译，相同变体立即使 `mapping-256-complete`、`sequence-256-complete`、`wide-depth-256` 失败。这证明问题是未感知 include 输入的构建复用，而非放宽深度断言能解决的测试波动。
+
+**当前处理。** replace 消费者 runner 计算原生 `.inc`/`.h`/`.c` 摘要，追加到实际有效 `CGO_CFLAGS`；保留工具链默认优化标志。CI 缓存也纳入 `.inc`/`.h` 内容。不可变 module 消费入口原本按全部运行源码摘要生成版本，已在同一缓存中验证只改 include 会得到新版本并拒绝该变体，无需改变它的编译条件。
+
+**回归入口。** `python3 tests/ablate.py budget` 在同一缓存中依次构建通过的基线及仅改变 `.inc` 的变体，后者必须由指定深度行为检出。完整 CI 默认运行全部消融，避免原生资源、scanner budget 和 source/edit 防线留在注册表中却没有执行。

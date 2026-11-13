@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run existing public consumers natively from a standalone content-pinned module."""
 import argparse,hashlib,json,os,pathlib,platform,shutil,subprocess,sys,tempfile,time,zipfile
+from assertions import parse_assertions
 ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'tools'));from snapshot import create
 p=argparse.ArgumentParser();p.add_argument('--expected-platform',required=True);p.add_argument('--cc-version');p.add_argument('--source-commit',help='require module bytes to match this Git commit');p.add_argument('--output',type=pathlib.Path,default=ROOT/'artifacts/native');args=p.parse_args();out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
 env=os.environ.copy();env.update(GOWORK='off',CGO_ENABLED='1',GOTOOLCHAIN='local');go=env.get('GO') or (str(pathlib.Path(env['GOROOT'])/'bin/go') if env.get('GOROOT') else shutil.which('go'));cc=env.get('CC') or ('gcc' if os.name=='nt' else 'cc')
@@ -74,7 +75,7 @@ try:
    if (source/'src/unicode/LICENSE').is_file():shutil.copyfile(source/'src/unicode/LICENSE',licenses/'tree-sitter-Unicode')
   for stage in ['source','edit','yaml','yamlvalue','schemaquery','audit','budget','retention','resume','resources','index','workspace']:
    r=run([str(binary),stage],c)
-   try:values=json.loads(r['stdout']);report['stageResults'][stage]=values;report['assertions'][stage]=r['exitCode']==0 and bool(values) and all(v is True for v in values.values())
+   try:values=parse_assertions(r['stdout']);report['stageResults'][stage]=values;report['assertions'][stage]=r['exitCode']==0 and all(values.values())
    except Exception:report['assertions'][stage]=False
 except Exception as e:report['error']=repr(e)
 finally:
