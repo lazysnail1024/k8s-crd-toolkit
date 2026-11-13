@@ -10,6 +10,8 @@ variants.extend([
  ('index-query-files','index/query_context.go','used++ // A pending or symbol-free file still costs one visit.','// File visits deliberately uncharged.','query-pending-files-cost-work'),
  ('index-query-scope','index/query_context.go','valid := i.symbolScopeUnchanged(scope, result.State.Generation)','valid := true','query-final-scope-change-rejected'),
  ('schemaquery-validation','schemaquery/query.go','valid := s.Validate(value) == nil','valid := true','schemaquery-leaf-validation'),
+ ('yamlvalue-plain-key-work','yamlvalue/project.go','plainKeys := !strings.ContainsAny(raw, "!&")','plainKeys := false','mapping-key-allocation-budget'),
+ ('yamlvalue-plain-key-resolution','yamlvalue/fields.go','case "y", "n", "yes", "no", "on", "off", "true", "false", "null":','case "":','mapping-key-reject-on'),
  ('yamlvalue-origin','yamlvalue/project.go','copy.Kind = "derived"','copy.Kind = "exact"','derived-use-location'),
  ('yamlvalue-comment-input','yamlvalue/project.go','raw, err := documentText(snapshot, span)','span = doc.Span()\n\traw, err := documentText(snapshot, span)','trailing-comments-project-allocation'),
  ('yamlvalue-comment-characters','yamlview/view.go',"text[i] < ' ' || text[i] > '~'",'false','comment-unicode-break-0085'),
