@@ -13,6 +13,7 @@ import (
 
 func yamlValueCases() {
 	yamlValueCommentCases()
+	yamlValueKeyCases()
 	ctx := context.Background()
 	options := yamlvalue.Options{MaxNodes: 100000, Fields: []string{"apiVersion", "kind"}}
 	project := func(text string, options yamlvalue.Options) (source.Snapshot, yamlvalue.Result, error) {
