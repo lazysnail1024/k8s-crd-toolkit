@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Reproduce behavior ablations in unique temporary copies; never edit baseline."""
 import pathlib,tempfile,shutil,subprocess,json,hashlib,sys,time
+import os
+CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 root=pathlib.Path(__file__).resolve().parents[1]
 variants=[('source','source/snapshot.go','next <= s.revision','false','revision'),('edit','edit/plan.go','text != r.ExpectedText','text != text','expected'),('yaml','yamlview/view.go','len(s.Text()) > 5*1024*1024','false','bytes-limit'),('yaml-depth','yamlview/internal/parser/parser.go','depth > 256','false','depth-limit'),('resources','yamlview/internal/parser/parser.go','defer value.tree.Close()','// tree release deliberately removed','resident-growth'),('budget','yamlview/internal/parser/grammar/scanner.c.inc','unsigned size = 0;\n    // Zig-zag','unsigned size = 0;\n    if (scanner->ind_typ_stk.size > 250) { toolkit_yaml_budget_exceeded = true; return 0; }\n    // Zig-zag','mapping-256-complete')]
 variants.append(('retention','yamlview/internal/parser/parser.go','tree := call.parser.Parse(call.data, nil)','tree := call.parser.ParseWithOptions(func(i int, _ sitter.Point) []byte { if i >= len(call.data) { return nil }; return call.data[i:] }, nil, &sitter.ParseOptions{ProgressCallback: func(s sitter.ParseState) bool { return call.ctx.Err() != nil || yaml.Exceeded() }})','success-context-released'))
@@ -40,7 +42,7 @@ if set(requested)-known:raise SystemExit('unknown ablation variants: '+', '.join
 if len(requested)!=len(set(requested)):raise SystemExit('duplicate ablation variants')
 if requested:variants=[v for v in variants if v[0] in requested]
 run_id=str(time.time_ns());out=root/'artifacts/ablations'/run_id;out.mkdir(parents=True)
-summary={'runID':run_id,'replay':sys.argv,'cases':[],'passed':False}
+summary={'schemaVersion':1,'executionIdentity':CI_IDENTITY,'runID':run_id,'replay':sys.argv,'cases':[],'passed':False}
 baselines={}
 
 def execute(stage,target,destination):
@@ -69,6 +71,8 @@ try:
    destination=out/stage
    child,observed=execute(stage+'-ablation',target,destination)
    row.update(file=file,old=old,new=new,baselineSHA256=hashlib.sha256(before.encode()).hexdigest(),variantSHA256=hashlib.sha256(path.read_bytes()).hexdigest(),report=str(destination/'report.json'),baselineReport=str(out/('baseline-'+suite)/'report.json'))
+   row['baselineEvidence']={k:baselines[suite].get(k) for k in ('stage','passed','buildSucceeded','consumerExitCode','assertions','steps')}
+   row['variantEvidence']={k:observed.get(k) for k in ('stage','passed','buildSucceeded','consumerExitCode','assertions','steps','error')}
    row['passed']=child.returncode==1 and observed.get('passed') is False and 'error' not in observed and observed.get('buildSucceeded') is True and observed.get('consumerExitCode')==1 and observed.get('assertions',{}).get(assertion) is False and all(s['exitCode']==0 for s in observed['steps'][:-1])
    if not row['passed']:raise RuntimeError('mutation was not killed by the named behavior assertion: '+stage)
    print(stage,assertion,'killed',flush=True)

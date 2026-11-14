@@ -1,0 +1,1550 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "291fa166d418bcdd4fd4bf3d4e2cb1d198e6cb8b",
+  "platforms": [
+    "linux/amd64",
+    "linux/arm64",
+    "darwin/amd64",
+    "darwin/arm64",
+    "windows/amd64"
+  ],
+  "stages": {
+    "source": [
+      "atomic",
+      "coordinate-A",
+      "coordinate-D",
+      "coordinate-G",
+      "coordinate-K",
+      "coordinate-M",
+      "coordinate-O",
+      "coordinate-P",
+      "invalid-utf8",
+      "reject-byte-@",
+      "reject-byte-B",
+      "reject-byte-E",
+      "reject-byte-H",
+      "reject-byte-L",
+      "reject-byte-Q",
+      "reject-line",
+      "reject-surrogate",
+      "revision",
+      "sequential",
+      "slice-crlf",
+      "zero"
+    ],
+    "edit": [
+      "expected",
+      "interior",
+      "next-revision",
+      "overlap",
+      "revision",
+      "same-point",
+      "same-snapshot-boundaries",
+      "utf8"
+    ],
+    "yaml": [
+      "alias",
+      "block",
+      "bytes-limit",
+      "cancel",
+      "damaged",
+      "depth-limit",
+      "document-limit",
+      "documents",
+      "documents-copy",
+      "duplicate",
+      "elements-copy",
+      "empty-document",
+      "exact-span",
+      "lifecycle",
+      "mapping",
+      "members-copy",
+      "missing-delimiter-A",
+      "missing-delimiter-B",
+      "missing-delimiter-C",
+      "parse",
+      "recovery",
+      "sequence"
+    ],
+    "yamlvalue": [
+      "alias-visit-boundary",
+      "alias-visit-budget",
+      "bounded-cost",
+      "caller-selected-fields",
+      "comment-directive-recovery-unchanged",
+      "comment-invalid-character-0001",
+      "comment-invalid-character-0007",
+      "comment-invalid-character-000B",
+      "comment-invalid-character-000C",
+      "comment-invalid-character-001B",
+      "comment-invalid-character-007F",
+      "comment-invalid-character-0080",
+      "comment-invalid-character-009F",
+      "comment-invalid-character-FFFE",
+      "comment-invalid-character-FFFF",
+      "comment-invalid-tab-gap-blank",
+      "comment-invalid-tab-gap-blank-indent",
+      "comment-invalid-tab-gap-indent",
+      "comment-source-mismatch-rejected",
+      "comment-stream-source-positions",
+      "comment-tab-keeps-full-span",
+      "comment-unicode-break-0085",
+      "comment-unicode-break-2028",
+      "comment-unicode-break-2029",
+      "comment-value-anchor-merge",
+      "comment-value-comment-tab",
+      "comment-value-crlf",
+      "comment-value-end-marker",
+      "comment-value-flow-map",
+      "comment-value-flow-sequence",
+      "comment-value-folded-keep",
+      "comment-value-inline",
+      "comment-value-literal-first-hash",
+      "comment-value-literal-indent",
+      "comment-value-literal-keep",
+      "comment-value-literal-strip",
+      "comment-value-null",
+      "comment-value-quoted",
+      "comment-value-standard-tag",
+      "comment-value-suffix",
+      "comment-value-unicode-comment",
+      "custom-tag-not-known",
+      "derived-use-location",
+      "document-anchor-isolation",
+      "expansion-boundary",
+      "expansion-budget",
+      "explicit-tag-policy",
+      "graph-projects",
+      "independent-exact",
+      "mapping-key-allocation-budget",
+      "mapping-key-allocation-input",
+      "mapping-key-allocation-values",
+      "mapping-key-duplicate-alias",
+      "mapping-key-duplicate-binary",
+      "mapping-key-duplicate-mixed-quote",
+      "mapping-key-reject-! on",
+      "mapping-key-reject-!!bool true",
+      "mapping-key-reject-!custom actual-key",
+      "mapping-key-reject-.nan",
+      "mapping-key-reject-0x20",
+      "mapping-key-reject-42",
+      "mapping-key-reject-FALSE",
+      "mapping-key-reject-False",
+      "mapping-key-reject-N",
+      "mapping-key-reject-NO",
+      "mapping-key-reject-NULL",
+      "mapping-key-reject-No",
+      "mapping-key-reject-Null",
+      "mapping-key-reject-OFF",
+      "mapping-key-reject-ON",
+      "mapping-key-reject-Off",
+      "mapping-key-reject-On",
+      "mapping-key-reject-TRUE",
+      "mapping-key-reject-True",
+      "mapping-key-reject-Y",
+      "mapping-key-reject-YES",
+      "mapping-key-reject-Yes",
+      "mapping-key-reject-false",
+      "mapping-key-reject-n",
+      "mapping-key-reject-no",
+      "mapping-key-reject-null",
+      "mapping-key-reject-off",
+      "mapping-key-reject-on",
+      "mapping-key-reject-true",
+      "mapping-key-reject-y",
+      "mapping-key-reject-yes",
+      "mapping-key-reject-~",
+      "mapping-key-value-alias-key",
+      "mapping-key-value-date",
+      "mapping-key-value-explicit-binary",
+      "mapping-key-value-explicit-string",
+      "mapping-key-value-mixed-case-strings",
+      "mapping-key-value-ordinary",
+      "mapping-key-value-punctuation",
+      "mapping-key-value-quoted",
+      "mapping-key-value-unicode",
+      "merge-precedence",
+      "ordinary-retention",
+      "ordinary-value",
+      "partial-fields-not-values",
+      "pinned-yaml11-scalar",
+      "projection-cancel",
+      "reject-invalid-'key': one\n\"key\": two\n",
+      "reject-invalid-item: &loop [*loop]\n",
+      "reject-invalid-item: *missing\n",
+      "reject-invalid-item: {<<: 2}\n",
+      "reject-invalid-key: one\nkey: two\n",
+      "shared-anchor",
+      "standard-tag-preserved",
+      "stream-view",
+      "trailing-comments-full-source",
+      "trailing-comments-project-allocation",
+      "trailing-comments-projected-value"
+    ],
+    "schemaquery": [
+      "schemaquery-active-negative-assertion-remains-unsupported",
+      "schemaquery-active-value-excluded",
+      "schemaquery-budget-not-empty-success",
+      "schemaquery-cancellation-not-empty-success",
+      "schemaquery-conditional-shape-remains-unsupported",
+      "schemaquery-depth-not-empty-success",
+      "schemaquery-empty-selection-is-caller-policy",
+      "schemaquery-enclosing-closure",
+      "schemaquery-incomplete-input-ambiguous",
+      "schemaquery-leaf-validation",
+      "schemaquery-legacy-tuple",
+      "schemaquery-negative-assertion-still-validates",
+      "schemaquery-non-argo-ref-and-finite-sibling",
+      "schemaquery-oneof-cardinality",
+      "schemaquery-ordinary-invalid-sibling-keeps-candidates",
+      "schemaquery-prefix-and-tail-items",
+      "schemaquery-preserved-open-object",
+      "schemaquery-shape-excludes-active-field",
+      "schemaquery-shape-ignores-unrelated-negative-assertion",
+      "schemaquery-shape-selection-is-immutable",
+      "schemaquery-stable-order",
+      "schemaquery-type-intersection",
+      "schemaquery-unsupported-is-explicit"
+    ],
+    "audit": [
+      "alias-unexpanded",
+      "cancel-return-bounded",
+      "depth-boundary",
+      "document-boundary",
+      "in-flight-deadline",
+      "issues-copy",
+      "merge-duplicate-preserved",
+      "quoted-not-decoded",
+      "raw-structure-parse",
+      "recovered-global-span",
+      "recovery-three"
+    ],
+    "budget": [
+      "block-lines",
+      "concurrent-budget-isolation",
+      "deep-missing-value-rejected",
+      "flow-256",
+      "mapping-256-complete",
+      "mapping1000-rejected",
+      "mapping257-rejected",
+      "mapping300-rejected",
+      "quoted-lines",
+      "recovery-after-budget",
+      "repeat-budget",
+      "reported-cd-input-rejected",
+      "sequence-256-complete",
+      "sequence1000-rejected",
+      "sequence257-rejected",
+      "sequence300-rejected",
+      "wide-depth-256",
+      "wide-shallow"
+    ],
+    "retention": [
+      "cancel-all-contexts-finalized-while-idle",
+      "cancel-context-released",
+      "cancel-result",
+      "concurrent-background-parses-terminate",
+      "concurrent-cancellation-prompt",
+      "concurrent-cancellation-results",
+      "error-all-contexts-finalized-while-idle",
+      "error-context-released",
+      "error-result",
+      "idle-parser-contexts-released",
+      "independent-small-parse-latency",
+      "independent-small-parse-remains-available",
+      "parser-usable-after-concurrent-cancellation",
+      "success-all-contexts-finalized-while-idle",
+      "success-context-released",
+      "success-result"
+    ],
+    "resume": [
+      "comments-cancel-prompt",
+      "comments-deadline",
+      "resumed-exact-structure"
+    ],
+    "resources": [
+      "repeated-structure",
+      "resident-growth"
+    ],
+    "index": [
+      "array-order-does-not-change-semantics",
+      "bytes-limit-explicit",
+      "bytes-limit-recoverable",
+      "caller-cannot-mutate-facts",
+      "cd-duplicate-fixture-parsed",
+      "cd-real-yaml-ambiguity-removed",
+      "cd-real-yaml-ambiguity-retained",
+      "cd-real-yaml-parsed",
+      "cd-real-yaml-target-arrives",
+      "cd-real-yaml-unresolved-use",
+      "cd-reference-only-caller-delete-removes-use",
+      "cd-reference-only-comment-fixture-parsed",
+      "cd-reference-only-duplicate-fixture-parsed",
+      "cd-reference-only-fixture-parsed",
+      "cd-reference-only-new",
+      "cd-reference-only-no-synthetic-owner-in-symbol-search",
+      "cd-reference-only-position-refresh-remains-local",
+      "cd-reference-only-real-yaml-ambiguity-removed",
+      "cd-reference-only-real-yaml-ambiguity-retained",
+      "cd-reference-only-real-yaml-target-arrives",
+      "cd-reference-only-real-yaml-unresolved-use",
+      "cd-reference-only-target-delete-keeps-unresolved-use",
+      "cd-relation-new",
+      "cd-target-delete-restores-unresolved",
+      "concurrent-final-file-0",
+      "concurrent-final-file-1",
+      "concurrent-fresh-facts-are-one-atomic-batch",
+      "concurrent-index-new",
+      "copies-new",
+      "copy-input-commit",
+      "cross-instance-destination-ticket",
+      "cross-instance-source-ticket",
+      "cross-instance-ticket-rejected",
+      "definition-query-isolated",
+      "delete-removes-only-one-definition",
+      "deleted-definition-not-restored",
+      "deleted-ticket-cannot-resurrect",
+      "dependencies-new",
+      "dependency-without-location",
+      "different-uris-do-not-invalidate-tickets",
+      "duplicate-definition-accepted",
+      "duplicate-targets-not-collapsed",
+      "empty-uri-rejected",
+      "file-limit-capacity-recovers",
+      "file-limit-explicit",
+      "file-limit-first-file",
+      "file-limit-new",
+      "file-limit-removal",
+      "file-query-copies-facts",
+      "first-scoped-definition",
+      "identities-new",
+      "index-evidence-written",
+      "invalid-input-new",
+      "limit-bytes-new",
+      "limit-references-new",
+      "limit-symbols-new",
+      "location-only-not-semantic",
+      "location-only-updates-navigation",
+      "lower-revision-rejected",
+      "missing-target-has-dependent",
+      "negative-index-limits-rejected",
+      "new-target-wakes-missing-caller",
+      "newest-file-fresh",
+      "newest-ticket-commits",
+      "next-key-caller-created",
+      "old-key-removed",
+      "old-reverse-dependency-removed",
+      "opaque-composite-a",
+      "opaque-composite-b",
+      "opaque-dependency-committed",
+      "opaque-key-does-not-collide",
+      "order-baseline",
+      "other-instance-new",
+      "pending-definitions-not-published",
+      "pending-location-not-published",
+      "pending-reference-begin",
+      "pending-reference-replaced",
+      "pending-reference-still-invalidatable",
+      "prefix-and-name",
+      "prefix-before-limit",
+      "prefix-foreign-population",
+      "prefix-new",
+      "prefix-pending-hidden",
+      "prefix-target-population",
+      "prefix-truncation-preserved",
+      "prefix-unfiltered-bound",
+      "query-allocation-new",
+      "query-already-canceled",
+      "query-budget-discards-partial-items",
+      "query-budget-new",
+      "query-budget-populated",
+      "query-complete-no-match-costs-work",
+      "query-concurrent-final-generation",
+      "query-concurrent-new",
+      "query-concurrent-no-mixed-generation",
+      "query-context-prefix-before-limit",
+      "query-context-stable-top-1",
+      "query-context-stable-top-2",
+      "query-context-stable-top-3",
+      "query-context-stable-top-5",
+      "query-context-stable-top-8",
+      "query-context-stable-top-9",
+      "query-empty-begin-0",
+      "query-empty-begin-1",
+      "query-empty-begin-10",
+      "query-empty-begin-11",
+      "query-empty-begin-12",
+      "query-empty-begin-13",
+      "query-empty-begin-14",
+      "query-empty-begin-15",
+      "query-empty-begin-16",
+      "query-empty-begin-17",
+      "query-empty-begin-18",
+      "query-empty-begin-19",
+      "query-empty-begin-2",
+      "query-empty-begin-3",
+      "query-empty-begin-4",
+      "query-empty-begin-5",
+      "query-empty-begin-6",
+      "query-empty-begin-7",
+      "query-empty-begin-8",
+      "query-empty-begin-9",
+      "query-empty-scope-stable-generation",
+      "query-final-scope-change-rejected",
+      "query-legacy-empty-scope-generation-preserved",
+      "query-membership-both-scopes-pending",
+      "query-membership-invalid-commit-rejected",
+      "query-membership-invalid-commit-stays-pending",
+      "query-membership-links-after-detach",
+      "query-membership-move-begin",
+      "query-membership-move-commit",
+      "query-membership-new",
+      "query-membership-order-independent-of-insertion",
+      "query-membership-populate-file:///a",
+      "query-membership-populate-file:///b",
+      "query-membership-populate-file:///c",
+      "query-membership-recreate",
+      "query-membership-remove-first",
+      "query-mid-traversal-cancel-discards-items",
+      "query-mutation-cancel-new",
+      "query-mutation-final-new",
+      "query-mutation-other-new",
+      "query-mutation-populated-cancel",
+      "query-mutation-populated-final",
+      "query-mutation-populated-other",
+      "query-mutation-populated-recreate",
+      "query-mutation-populated-same",
+      "query-mutation-recreate-new",
+      "query-mutation-same-new",
+      "query-no-match-budget",
+      "query-pending-files-cost-work",
+      "query-pending-scan-not-discovery-proof",
+      "query-reject-nil-context",
+      "query-reject-result-limit",
+      "query-reject-work-limit",
+      "query-result-cap-independent-of-work",
+      "query-same-scope-change-rejected",
+      "query-scope-recreation-rejected",
+      "query-small-budget-no-all-uri-snapshot",
+      "query-unrelated-scope-change-accepted",
+      "recover-duplicate-symbol-id",
+      "recover-empty-dependency-key",
+      "recover-empty-reference-target",
+      "recover-empty-symbol-id",
+      "recover-empty-symbol-key",
+      "recover-negative-reference-span",
+      "recover-negative-span",
+      "recover-reversed-span",
+      "recover-selection-outside-span",
+      "recreated-file-commits",
+      "recreation-survives-old-result",
+      "reference-query-isolated",
+      "references-limit-explicit",
+      "references-limit-recoverable",
+      "reject-duplicate-symbol-id",
+      "reject-empty-dependency-key",
+      "reject-empty-reference-target",
+      "reject-empty-symbol-id",
+      "reject-empty-symbol-key",
+      "reject-negative-reference-span",
+      "reject-negative-span",
+      "reject-reversed-span",
+      "reject-selection-outside-span",
+      "remove-pending-file",
+      "remove-unknown-is-noop",
+      "repeated-begin-not-double-pending",
+      "retained-summaries-usable",
+      "reuse-advances-generation-without-caller-reparse",
+      "reuse-cannot-resurrect-removed-facts",
+      "reuse-cross-instance-rejected",
+      "reuse-deleted-ticket-rejected",
+      "reuse-dependent-commit",
+      "reuse-does-not-copy-large-summary",
+      "reuse-empty-summary-is-a-commit",
+      "reuse-empty-summary-ticket",
+      "reuse-fallback-commit-keeps-ticket",
+      "reuse-fallback-releases-old-scope",
+      "reuse-first-ticket",
+      "reuse-large-commit",
+      "reuse-large-new",
+      "reuse-new",
+      "reuse-new-empty-summary-commit",
+      "reuse-new-ticket",
+      "reuse-original-commit",
+      "reuse-other-instance-new",
+      "reuse-other-instance-ticket",
+      "reuse-pending-locations-hidden",
+      "reuse-preserves-reverse-dependencies",
+      "reuse-recreated-ticket",
+      "reuse-rejects-different-scope",
+      "reuse-remove-file",
+      "reuse-restores-new-revision",
+      "reuse-scope-change-begins",
+      "reuse-stale-ticket-rejected",
+      "reuse-ticket-before-remove",
+      "reuse-ticket-cannot-replay",
+      "same-revision-recreation",
+      "scope-b-pending-created",
+      "scope-isolates-same-key",
+      "scope-move-clears-intermediate",
+      "scope-move-commits-only-final-scope",
+      "scope-move-definition",
+      "scope-move-final-ticket",
+      "scope-move-first-invalidation",
+      "scope-move-intermediate",
+      "scope-move-new-caller",
+      "scope-move-old-caller",
+      "scope-move-wakes-both-sides",
+      "scope-moves-new",
+      "scope-state-isolated",
+      "second-scoped-definition",
+      "shape-change-cannot-hide-behind-digest",
+      "signature-change-wakes-caller",
+      "stale-ticket-cannot-commit",
+      "summaries-do-not-retain-source-storage",
+      "summary-retention-new",
+      "symbol-order-fixture",
+      "symbol-order-new",
+      "symbol-query-allocation-evidence-written",
+      "symbol-query-allocation-new",
+      "symbol-query-large-input",
+      "symbol-query-large-input-correct",
+      "symbol-query-temporary-allocation-bounded",
+      "symbol-query-warmup",
+      "symbol-search-extra-input",
+      "symbols-limit-explicit",
+      "symbols-limit-recoverable",
+      "ticket-before-delete",
+      "ticket-cannot-replay",
+      "ticket-first-begin",
+      "ticket-newer-begin",
+      "tickets-new",
+      "unresolved-reference-retained",
+      "unresolved-use-committed",
+      "wf-comment-fixture-parsed",
+      "wf-comment-keeps-caller-semantic-cache",
+      "wf-comment-refreshes-real-source-location",
+      "wf-duplicate-fixture-parsed",
+      "wf-input-fixture-parsed",
+      "wf-input-signature-wakes-caller",
+      "wf-output-fixture-parsed",
+      "wf-output-signature-wakes-caller",
+      "wf-real-yaml-ambiguity-removed",
+      "wf-real-yaml-ambiguity-retained",
+      "wf-real-yaml-parsed",
+      "wf-real-yaml-target-arrives",
+      "wf-real-yaml-unresolved-use",
+      "wf-reference-only-caller-delete-removes-use",
+      "wf-reference-only-comment-fixture-parsed",
+      "wf-reference-only-duplicate-fixture-parsed",
+      "wf-reference-only-fixture-parsed",
+      "wf-reference-only-new",
+      "wf-reference-only-no-synthetic-owner-in-symbol-search",
+      "wf-reference-only-position-refresh-remains-local",
+      "wf-reference-only-real-yaml-ambiguity-removed",
+      "wf-reference-only-real-yaml-ambiguity-retained",
+      "wf-reference-only-real-yaml-target-arrives",
+      "wf-reference-only-real-yaml-unresolved-use",
+      "wf-reference-only-target-delete-keeps-unresolved-use",
+      "wf-relation-new",
+      "wf-target-delete-restores-unresolved",
+      "workspace-symbol-explicit-truncation",
+      "workspace-symbol-filter",
+      "workspace-symbol-no-match-not-truncated",
+      "workspace-symbol-stable-top-1",
+      "workspace-symbol-stable-top-2",
+      "workspace-symbol-stable-top-3",
+      "workspace-symbol-stable-top-5",
+      "workspace-symbol-stable-top-8",
+      "workspace-symbol-stable-top-9",
+      "workspace-symbol-zero-limit-rejected",
+      "zero-index-limits-rejected"
+    ],
+    "workspace": [
+      "background-progress-under-continuous-edits",
+      "background-scan-started",
+      "bounded-read-failure-releases-own-ticket",
+      "bounded-read-fixture-created",
+      "cancelled-old-read-keeps-new-ticket",
+      "close-does-not-restore-cached-disk",
+      "close-forces-new-disk-read",
+      "closed-disk-text-not-retained",
+      "closed-document-new-read",
+      "closed-scanner-not-complete",
+      "closing-one-buffer-keeps-other-charge",
+      "consumed-read-discard-is-noop",
+      "consumer-cancellation-releases-own-ticket",
+      "consumer-cannot-reuse-old-disk-text",
+      "consumer-read-bounded-before-publish",
+      "consumer-read-cancellation-reported",
+      "consumer-read-error-releases-own-ticket",
+      "consumer-read-error-reported",
+      "coordinator-bounded-queue-created",
+      "coordinator-coalescing-at-capacity",
+      "coordinator-committed-input-released",
+      "coordinator-completed-input-not-recreated",
+      "coordinator-deleted-uri-cannot-resurrect",
+      "coordinator-deleted-worker-cannot-commit",
+      "coordinator-deletion-had-running-work",
+      "coordinator-documents-new",
+      "coordinator-explicit-backpressure",
+      "coordinator-fair-queue-created",
+      "coordinator-index-new",
+      "coordinator-late-worker-cannot-overwrite",
+      "coordinator-old-notice-after-commit-safe",
+      "coordinator-old-notice-after-delete-safe",
+      "coordinator-old-notice-after-reopen-safe",
+      "coordinator-old-notice-while-pending-safe",
+      "coordinator-pending-changes-coalesce",
+      "coordinator-pending-latest-committed",
+      "coordinator-pending-obsolete-ticket-rejected",
+      "coordinator-pending-pop-uses-latest-input",
+      "coordinator-priority-promotion-preserved",
+      "coordinator-queue-created",
+      "coordinator-reopen-rejects-old-fact-ticket",
+      "coordinator-reopen-uses-new-lifetime",
+      "coordinator-running-changes-use-latest-input",
+      "coordinator-running-input-taken",
+      "coordinator-same-fair-service",
+      "cross-document-store-ticket-rejected",
+      "cross-store-discard-cannot-cancel-local-read",
+      "cross-store-discard-keeps-source-read",
+      "current-directory-prioritized",
+      "current-directory-served-before-bulk",
+      "current-document-runs-during-discovery",
+      "current-work-retains-majority",
+      "directory-limit-keeps-independent-files",
+      "directory-limit-not-false-complete",
+      "discard-failures-fixture-directory",
+      "discard-first-store-new",
+      "discard-keeps-authoritative-overlay",
+      "discard-overlay-closed",
+      "discard-reads-new",
+      "discard-second-store-new",
+      "disk-event-invalidates-ticket",
+      "disk-event-keeps-overlay",
+      "disk-read-byte-limit",
+      "disk-read-does-not-charge-open-bytes",
+      "disk-result-cannot-overwrite-overlay",
+      "disk-ticket-created",
+      "document-entry-limit-explicit",
+      "document-entry-limit-first",
+      "document-entry-limit-new",
+      "document-file-byte-boundary",
+      "document-file-limit-atomic",
+      "document-limit-new",
+      "document-limit-recovers",
+      "document-limit-release",
+      "document-open-byte-boundary",
+      "document-open-byte-limit",
+      "documents-new",
+      "empty-document-uri-rejected",
+      "fair-queue-created",
+      "fair-queue-input-file:///background",
+      "fair-queue-input-file:///current",
+      "fair-queue-input-file:///related",
+      "foreign-ticket-created",
+      "foreign-ticket-target-created",
+      "generic-scanner-created",
+      "interaction-background-queued",
+      "interaction-current-queued",
+      "interaction-disk-edited",
+      "interaction-documents-new",
+      "interaction-overlay-closed",
+      "interaction-overlay-created",
+      "interaction-queue-created",
+      "interaction-scanner-created",
+      "invalid-overlay-batch-atomic",
+      "invalid-overlay-utf8-rejected",
+      "large-fixture-created",
+      "large-scan-does-not-restart-processed-prefix",
+      "large-scan-progress-preserved",
+      "large-scan-work-stays-bounded",
+      "latest-disk-read-published",
+      "limited-root-fixture",
+      "limited-scanner-closed",
+      "limited-scanner-created",
+      "limited-subdir-0",
+      "limited-subdir-1",
+      "limited-subdir-2",
+      "limited-subdir-3",
+      "membership-active-pass-cannot-delete",
+      "membership-before-first-pass-safe",
+      "membership-complete-pass-finishes",
+      "membership-failed-pass-cannot-delete",
+      "membership-first-pass-finished",
+      "membership-foreign-pass-rejected",
+      "membership-old-pass-cannot-delete-newer-input",
+      "membership-replacement-pass-can-finish",
+      "membership-watcher-created-file-survives-sweep",
+      "membership-watcher-is-current-observation",
+      "missing-root-constructor-does-not-read",
+      "missing-root-not-false-complete",
+      "old-overlay-revision-rejected",
+      "ordinary-files-never-become-parse-jobs",
+      "other-documents-new",
+      "outstanding-read-uses-entry",
+      "overlay-before-discard-created",
+      "overlay-change-replaces-byte-charge",
+      "overlay-close",
+      "overlay-close-releases-byte-charge",
+      "overlay-open-bytes",
+      "overlay-opened",
+      "overlay-prevents-disk-read",
+      "overlay-reopen",
+      "overlay-versioned-change",
+      "oversized-read-ticket",
+      "own-read-discarded",
+      "priority-boundary-scanner-created",
+      "priority-cannot-bypass-exclude",
+      "priority-cannot-escape-root",
+      "priority-fixture-created",
+      "queue-background-added",
+      "queue-coalesces-uri",
+      "queue-created",
+      "queue-current-priority-preserved",
+      "queue-full-explicit",
+      "queue-promotion-at-capacity",
+      "queue-rejects-empty-uri",
+      "queue-rejects-invalid-priority",
+      "queue-related-added",
+      "queue-remove-clears-pending",
+      "queue-repeated-notification-is-idempotent",
+      "read-before-event",
+      "read-before-overlay-discard",
+      "read-before-reopen",
+      "read-ticket-cannot-replay",
+      "recovered-open-charged-once",
+      "rejected-open-does-not-charge-bytes",
+      "rejected-overlay-change-keeps-byte-charge",
+      "related-progress-under-continuous-edits",
+      "reopened-document-rejects-old-ticket",
+      "repeated-discard-cannot-cancel-recreated-read",
+      "replacement-read-ticket",
+      "same-uri-after-discard-created",
+      "scanner-active-directory-promotion-retained",
+      "scanner-active-promotion-still-discovers-exactly",
+      "scanner-background-cursor-started-within-budget",
+      "scanner-bounded-work",
+      "scanner-cancel-not-complete",
+      "scanner-candidates-exact-once",
+      "scanner-completed-directory-not-requeued",
+      "scanner-created-without-traversal",
+      "scanner-empty-root-rejected",
+      "scanner-excess-work-rejected",
+      "scanner-explicit-close",
+      "scanner-failed-directory-explicitly-incomplete",
+      "scanner-failed-directory-not-requeued-in-pass",
+      "scanner-failures-fixture-directory",
+      "scanner-fixture-.git/hidden.yaml",
+      "scanner-fixture-a.yaml",
+      "scanner-fixture-directory",
+      "scanner-fixture-readme.txt",
+      "scanner-fixture-repo/binary.bin",
+      "scanner-fixture-repo/one.yml",
+      "scanner-fixture-repo/two.yaml",
+      "scanner-fixture-vendor/hidden.yaml",
+      "scanner-interaction-fixture-directory",
+      "scanner-invalid-directory-limit-rejected",
+      "scanner-invalid-exclude-rejected",
+      "scanner-invalid-extension-rejected",
+      "scanner-late-fixture",
+      "scanner-lifecycle-created",
+      "scanner-lifecycle-fixture-directory",
+      "scanner-lifecycle-fixtures",
+      "scanner-lifecycle-missing-created",
+      "scanner-mid-scan-cancellation-explicit",
+      "scanner-no-hidden-yaml-or-directory-policy",
+      "scanner-non-yaml-work-remains-bounded",
+      "scanner-overlapping-roots-resume-exactly",
+      "scanner-paused-directory-promotion-retained",
+      "scanner-paused-promotion-still-discovers-exactly",
+      "scanner-promotion-fixtures",
+      "scanner-promotions-fixture-directory",
+      "scanner-related-directory-within-four-units",
+      "scanner-resumes-to-complete",
+      "scanner-zero-work-rejected",
+      "self-cancel-followup-cleanup",
+      "self-cancel-read-created",
+      "self-cancel-releases-entry",
+      "started-scan-cancel-not-complete",
+      "superseded-read-rejected",
+      "symlink-root-created-without-io",
+      "symlink-root-explicitly-incomplete",
+      "symlink-scanner-created",
+      "symlinks-not-candidates-or-traversed",
+      "workqueue-accepted-file-survives-limit",
+      "workqueue-admitted-file:background-a",
+      "workqueue-admitted-file:background-b",
+      "workqueue-admitted-file:foreground",
+      "workqueue-admitted-file:related",
+      "workqueue-before-removal",
+      "workqueue-bounds-ready-not-notifications",
+      "workqueue-coalesced-wake-serves-two-workers",
+      "workqueue-complete-releases-capacity",
+      "workqueue-completed-file:background-a",
+      "workqueue-completed-file:background-b",
+      "workqueue-completed-file:foreground",
+      "workqueue-completed-file:related",
+      "workqueue-concurrent-drain-releases-all-work",
+      "workqueue-concurrent-inputs-all-observed",
+      "workqueue-cross-owner-completion-rejected",
+      "workqueue-dispatch-reserves-uri",
+      "workqueue-first-completion-accepted",
+      "workqueue-followup-completes",
+      "workqueue-inflight-notification-0",
+      "workqueue-inflight-notification-1",
+      "workqueue-inflight-notification-2",
+      "workqueue-initial-input",
+      "workqueue-invalid-limits-[0 1]",
+      "workqueue-invalid-limits-[1 0]",
+      "workqueue-invalid-limits-[2 1]",
+      "workqueue-invalid-priority",
+      "workqueue-invalid-uri",
+      "workqueue-new-1-1",
+      "workqueue-new-1-2",
+      "workqueue-new-1-3",
+      "workqueue-new-1-4",
+      "workqueue-new-2-2",
+      "workqueue-new-2-3",
+      "workqueue-new-2-32",
+      "workqueue-old-completion-cannot-release-next-run",
+      "workqueue-outstanding-limit-explicit",
+      "workqueue-overflow-priority-and-fifo",
+      "workqueue-overflow-retains-highest-priority",
+      "workqueue-recreated-completes",
+      "workqueue-recreated-notification-preserved",
+      "workqueue-recreated-uri-waits-for-retired-worker",
+      "workqueue-recreation-admitted",
+      "workqueue-rejected-event-can-retry",
+      "workqueue-removal-run-started",
+      "workqueue-remove-waiting-clears-obligation",
+      "workqueue-retired-capacity-released",
+      "workqueue-retired-completion-only-releases-reservation",
+      "workqueue-retired-extra-allows-replacement-file",
+      "workqueue-retired-extra-initial",
+      "workqueue-retired-extra-released",
+      "workqueue-retired-extra-running",
+      "workqueue-retired-replay-cannot-complete-recreation",
+      "workqueue-retired-run-keeps-bounded-reservation",
+      "workqueue-running-not-dispatched-twice",
+      "workqueue-running-update-survives-completion",
+      "workqueue-small-ready-fairness-1",
+      "workqueue-small-ready-fairness-2",
+      "workqueue-true-limit-keeps-accepted-obligations",
+      "workqueue-wake-two-inputs",
+      "workqueue-zero-completion-rejected",
+      "workspace-evidence-written",
+      "zero-document-limits-rejected",
+      "zero-queue-capacity-rejected",
+      "zero-read-discard-is-noop"
+    ]
+  },
+  "mutations": [
+    {
+      "id": "source",
+      "input": "source/snapshot.go",
+      "expectedFailure": "revision"
+    },
+    {
+      "id": "edit",
+      "input": "edit/plan.go",
+      "expectedFailure": "expected"
+    },
+    {
+      "id": "yaml",
+      "input": "yamlview/view.go",
+      "expectedFailure": "bytes-limit"
+    },
+    {
+      "id": "yaml-depth",
+      "input": "yamlview/internal/parser/parser.go",
+      "expectedFailure": "depth-limit"
+    },
+    {
+      "id": "resources",
+      "input": "yamlview/internal/parser/parser.go",
+      "expectedFailure": "resident-growth"
+    },
+    {
+      "id": "budget",
+      "input": "yamlview/internal/parser/grammar/scanner.c.inc",
+      "expectedFailure": "mapping-256-complete"
+    },
+    {
+      "id": "retention",
+      "input": "yamlview/internal/parser/parser.go",
+      "expectedFailure": "success-context-released"
+    },
+    {
+      "id": "index-prefix",
+      "input": "index/query.go",
+      "expectedFailure": "prefix-before-limit"
+    },
+    {
+      "id": "index-query-budget",
+      "input": "index/query_context.go",
+      "expectedFailure": "query-no-match-budget"
+    },
+    {
+      "id": "index-query-files",
+      "input": "index/query_context.go",
+      "expectedFailure": "query-pending-files-cost-work"
+    },
+    {
+      "id": "index-query-scope",
+      "input": "index/query_context.go",
+      "expectedFailure": "query-final-scope-change-rejected"
+    },
+    {
+      "id": "schemaquery-validation",
+      "input": "schemaquery/query.go",
+      "expectedFailure": "schemaquery-leaf-validation"
+    },
+    {
+      "id": "yamlvalue-plain-key-work",
+      "input": "yamlvalue/project.go",
+      "expectedFailure": "mapping-key-allocation-budget"
+    },
+    {
+      "id": "yamlvalue-plain-key-resolution",
+      "input": "yamlvalue/fields.go",
+      "expectedFailure": "mapping-key-reject-on"
+    },
+    {
+      "id": "yamlvalue-origin",
+      "input": "yamlvalue/project.go",
+      "expectedFailure": "derived-use-location"
+    },
+    {
+      "id": "yamlvalue-comment-input",
+      "input": "yamlvalue/project.go",
+      "expectedFailure": "trailing-comments-project-allocation"
+    },
+    {
+      "id": "yamlvalue-comment-characters",
+      "input": "yamlview/view.go",
+      "expectedFailure": "comment-unicode-break-0085"
+    },
+    {
+      "id": "yamlvalue-comment-tabs",
+      "input": "yamlview/view.go",
+      "expectedFailure": "comment-invalid-tab-gap-blank"
+    },
+    {
+      "id": "index-ticket",
+      "input": "index/index.go",
+      "expectedFailure": "stale-ticket-cannot-commit"
+    },
+    {
+      "id": "index-reuse",
+      "input": "index/index.go",
+      "expectedFailure": "reuse-rejects-different-scope"
+    },
+    {
+      "id": "index-missing",
+      "input": "index/index.go",
+      "expectedFailure": "new-target-wakes-missing-caller"
+    },
+    {
+      "id": "index-position",
+      "input": "index/facts.go",
+      "expectedFailure": "location-only-not-semantic"
+    },
+    {
+      "id": "index-fresh",
+      "input": "index/query.go",
+      "expectedFailure": "pending-definitions-not-published"
+    },
+    {
+      "id": "index-retention",
+      "input": "index/facts.go",
+      "expectedFailure": "summaries-do-not-retain-source-storage"
+    },
+    {
+      "id": "workspace-overlay",
+      "input": "workspace/documents.go",
+      "expectedFailure": "overlay-prevents-disk-read"
+    },
+    {
+      "id": "workspace-ticket",
+      "input": "workspace/documents.go",
+      "expectedFailure": "superseded-read-rejected"
+    },
+    {
+      "id": "workspace-discard",
+      "input": "workspace/documents.go",
+      "expectedFailure": "cancelled-old-read-keeps-new-ticket"
+    },
+    {
+      "id": "workspace-coalescing",
+      "input": "workspace/queue.go",
+      "expectedFailure": "queue-coalesces-uri"
+    },
+    {
+      "id": "workspace-fairness",
+      "input": "workspace/queue.go",
+      "expectedFailure": "background-progress-under-continuous-edits"
+    },
+    {
+      "id": "workspace-workqueue-fairness",
+      "input": "workspace/workqueue.go",
+      "expectedFailure": "workqueue-small-ready-fairness-1"
+    },
+    {
+      "id": "workspace-workqueue-followup",
+      "input": "workspace/workqueue.go",
+      "expectedFailure": "workqueue-running-update-survives-completion"
+    },
+    {
+      "id": "workspace-membership-complete",
+      "input": "workspace/membership.go",
+      "expectedFailure": "membership-failed-pass-cannot-delete"
+    },
+    {
+      "id": "workspace-priority",
+      "input": "workspace/scanner.go",
+      "expectedFailure": "current-directory-served-before-bulk"
+    },
+    {
+      "id": "workspace-complete",
+      "input": "workspace/scanner.go",
+      "expectedFailure": "directory-limit-not-false-complete"
+    },
+    {
+      "id": "workspace-filter",
+      "input": "workspace/scanner.go",
+      "expectedFailure": "scanner-candidates-exact-once"
+    }
+  ],
+  "resourceSourceConstraints": {
+    "tests/consumer/audit.go": [
+      {
+        "line": 7,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/yamlview\""
+      },
+      {
+        "line": 16,
+        "text": "v, e := yamlview.Parse(ctx, snap(strings.Repeat(\"[\", 256)+\"0\"+strings.Repeat(\"]\", 256)))"
+      },
+      {
+        "line": 18,
+        "text": "v, e = yamlview.Parse(ctx, snap(strings.Repeat(\"---\\n\", 2000)))"
+      },
+      {
+        "line": 19,
+        "text": "check(\"document-boundary\", e == nil && len(v.Documents()) == 2000)"
+      },
+      {
+        "line": 50,
+        "text": "c, cancel := context.WithTimeout(ctx, time.Millisecond)"
+      },
+      {
+        "line": 55,
+        "text": "check(\"cancel-return-bounded\", time.Since(start) < 5*time.Second)"
+      },
+      {
+        "line": 58,
+        "text": "payload := snap(strings.Repeat(\"a: [1, 2, 3]\\n\", 256))"
+      },
+      {
+        "line": 61,
+        "text": "return e == nil && len(v.Documents()) == 1 && len(v.Documents()[0].Root().Members()) == 256"
+      },
+      {
+        "line": 73,
+        "text": "for i := 0; i < 2000; i++ {"
+      },
+      {
+        "line": 87,
+        "text": "check(\"resident-growth\", validSamples && after-before < 64*1024*1024)"
+      },
+      {
+        "line": 88,
+        "text": "json.NewEncoder(os.Stderr).Encode(map[string]any{\"warmup\": 100, \"iterations\": 2000, \"rssBytes\": samples, \"growthLimitBytes\": 64 * 1024 * 1024, \"growthBytes\": after - before, \"platform\": runtime.GOOS + \"/\" + runtime.GOARCH})"
+      }
+    ],
+    "tests/consumer/budget.go": [
+      {
+        "line": 6,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/yamlview\""
+      },
+      {
+        "line": 54,
+        "text": "for _, n := range []int{1000, 300, 257, 256} {"
+      },
+      {
+        "line": 61,
+        "text": "if n > 256 {"
+      },
+      {
+        "line": 64,
+        "text": "check(name+\"-256-complete\", e == nil && len(v.Documents()) == 1 && v.Documents()[0].Complete())"
+      },
+      {
+        "line": 71,
+        "text": "for i := 0; i < 256; i++ {"
+      },
+      {
+        "line": 75,
+        "text": "wide.WriteString(strings.Repeat(\" \", 256*128))"
+      },
+      {
+        "line": 78,
+        "text": "check(\"wide-depth-256\", err == nil && len(v.Documents()) == 1 && v.Documents()[0].Complete())"
+      },
+      {
+        "line": 79,
+        "text": "for _, input := range []struct{ name, text string }{{\"wide-shallow\", \"x:\\n\" + strings.Repeat(\" \", 40000) + \"y: ok\\n\"}, {\"quoted-lines\", \"x: \\\"start\\n\" + strings.Repeat(\"  literal [ { : text\\n\", 300) + \"  end\\\"\\n\"}, {\"block-lines\", \"x: |\\n\" + strings.Repeat(\"  literal [ { : text\\n\", 300)}, {\"flow-256\", strings.Repeat(\"[\", 256) + \"0\" + strings.Repeat(\"]\", 256)}} {"
+      }
+    ],
+    "tests/consumer/coordination.go": [
+      {
+        "line": 7,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/index\""
+      },
+      {
+        "line": 8,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/source\""
+      },
+      {
+        "line": 9,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/workspace\""
+      },
+      {
+        "line": 28,
+        "text": "docs := consumerDocuments(\"coordinator-documents\", workspace.DocumentLimits{Entries: 8, FileBytes: 1024, OpenBytes: 8192})"
+      }
+    ],
+    "tests/consumer/index.go": [
+      {
+        "line": 5,
+        "text": "\"crypto/sha256\""
+      },
+      {
+        "line": 14,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/index\""
+      },
+      {
+        "line": 15,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/source\""
+      },
+      {
+        "line": 49,
+        "text": "SemanticDigest: sha256.Sum256([]byte(semantic)),"
+      },
+      {
+        "line": 276,
+        "text": "const allocationLimit = 1024 * 1024"
+      },
+      {
+        "line": 277,
+        "text": "i := consumerIndex(\"symbol-query-allocation\", index.Limits{Files: files, Symbols: files * perFile, References: 1, Bytes: 8 * 1024 * 1024})"
+      },
+      {
+        "line": 303,
+        "text": "allocated := after.TotalAlloc - before.TotalAlloc"
+      },
+      {
+        "line": 455,
+        "text": "limits.Bytes = 256"
+      },
+      {
+        "line": 488,
+        "text": "text := fmt.Sprintf(\"resource-%03d\", n) + strings.Repeat(\"x\", 1024*1024)"
+      },
+      {
+        "line": 499,
+        "text": "growth := int64(after.HeapAlloc) - int64(before.HeapAlloc)"
+      },
+      {
+        "line": 500,
+        "text": "check(\"summaries-do-not-retain-source-storage\", growth < 8*1024*1024)"
+      },
+      {
+        "line": 501,
+        "text": "check(\"index-evidence-written\", json.NewEncoder(os.Stderr).Encode(map[string]any{\"summaryCount\": 16, \"sourceBytesPerSummary\": 1024 * 1024, \"retainedHeapGrowth\": growth, \"retentionLimit\": 8 * 1024 * 1024}) == nil)"
+      }
+    ],
+    "tests/consumer/index_context.go": [
+      {
+        "line": 9,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/index\""
+      },
+      {
+        "line": 10,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/source\""
+      },
+      {
+        "line": 73,
+        "text": "i := consumerIndex(\"query-budget\", index.Limits{Files: 64, Symbols: 1024, References: 4, Bytes: 1 << 20})"
+      },
+      {
+        "line": 129,
+        "text": "i := consumerIndex(\"query-mutation-\"+mode, index.Limits{Files: 4, Symbols: 1024, References: 4, Bytes: 1 << 20})"
+      },
+      {
+        "line": 231,
+        "text": "check(\"query-small-budget-no-all-uri-snapshot\", valid && after.TotalAlloc-before.TotalAlloc < 512*1024)"
+      }
+    ],
+    "tests/consumer/index_prefix.go": [
+      {
+        "line": 7,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/index\""
+      },
+      {
+        "line": 8,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/source\""
+      }
+    ],
+    "tests/consumer/main.go": [
+      {
+        "line": 5,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/edit\""
+      },
+      {
+        "line": 6,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/source\""
+      }
+    ],
+    "tests/consumer/relations.go": [
+      {
+        "line": 5,
+        "text": "\"crypto/sha256\""
+      },
+      {
+        "line": 13,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/index\""
+      },
+      {
+        "line": 14,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/source\""
+      },
+      {
+        "line": 15,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/yamlview\""
+      },
+      {
+        "line": 167,
+        "text": "facts.SemanticDigest = sha256.Sum256([]byte(semantic))"
+      },
+      {
+        "line": 277,
+        "text": "facts := index.Facts{SemanticDigest: sha256.Sum256([]byte(target)), References: []index.Reference{{Target: target, Span: use.Span()}}}"
+      }
+    ],
+    "tests/consumer/resume.go": [
+      {
+        "line": 8,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/yamlview\""
+      },
+      {
+        "line": 32,
+        "text": "ctx, cancel := context.WithTimeout(context.Background(), time.Second)"
+      },
+      {
+        "line": 38,
+        "text": "check(\"comments-cancel-prompt\", elapsed < 3*time.Second)"
+      }
+    ],
+    "tests/consumer/retention.go": [
+      {
+        "line": 7,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/yamlview\""
+      },
+      {
+        "line": 33,
+        "text": "value := &retainedBlob{Data: make([]byte, 1024*1024)}"
+      },
+      {
+        "line": 45,
+        "text": "input = strings.Repeat(\"- [a,b,c,d,e,f,g,h,i,j]\\n\", 20000)"
+      },
+      {
+        "line": 46,
+        "text": "ctx, cancel = context.WithTimeout(ctx, time.Millisecond)"
+      },
+      {
+        "line": 53,
+        "text": "time.Sleep(20 * time.Millisecond)"
+      },
+      {
+        "line": 55,
+        "text": "until := time.Now().Add(2 * time.Second)"
+      },
+      {
+        "line": 58,
+        "text": "time.Sleep(10 * time.Millisecond)"
+      },
+      {
+        "line": 61,
+        "text": "delta := int64(after.HeapAlloc) - int64(before.HeapAlloc)"
+      },
+      {
+        "line": 63,
+        "text": "check(mode+\"-context-released\", delta < 8*1024*1024)"
+      },
+      {
+        "line": 65,
+        "text": "json.NewEncoder(os.Stderr).Encode(map[string]any{\"mode\": mode, \"parses\": 96, \"retainedBytes\": delta, \"finalized\": finalized.Load(), \"threshold\": 8 * 1024 * 1024})"
+      },
+      {
+        "line": 72,
+        "text": "input := snap(\"head: ok\\n\" + strings.Repeat(comment, (5*1024*1024-len(framing))/len(comment)) + \"tail: end\\n\")"
+      },
+      {
+        "line": 73,
+        "text": "ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)"
+      },
+      {
+        "line": 91,
+        "text": "time.Sleep(200 * time.Millisecond)"
+      },
+      {
+        "line": 93,
+        "text": "foreground, stop := context.WithTimeout(context.Background(), 500*time.Millisecond)"
+      },
+      {
+        "line": 104,
+        "text": "check(\"independent-small-parse-latency\", elapsed < 100*time.Millisecond)"
+      },
+      {
+        "line": 124,
+        "text": "value := &retainedBlob{Data: make([]byte, 1024*1024)}"
+      },
+      {
+        "line": 127,
+        "text": "ctx, cancel := context.WithTimeout(context.WithValue(context.Background(), retentionKey{}, value), 10*time.Millisecond)"
+      },
+      {
+        "line": 143,
+        "text": "check(\"concurrent-cancellation-prompt\", elapsed < 3*time.Second)"
+      },
+      {
+        "line": 144,
+        "text": "until := time.Now().Add(2 * time.Second)"
+      },
+      {
+        "line": 147,
+        "text": "time.Sleep(10 * time.Millisecond)"
+      }
+    ],
+    "tests/consumer/reuse.go": [
+      {
+        "line": 9,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/index\""
+      },
+      {
+        "line": 10,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/source\""
+      },
+      {
+        "line": 82,
+        "text": "i := consumerIndex(\"reuse-large\", index.Limits{Files: 1, Symbols: 20000, References: 1, Bytes: 4 << 20})"
+      },
+      {
+        "line": 87,
+        "text": "for n := range 20000 {"
+      },
+      {
+        "line": 109,
+        "text": "check(\"reuse-does-not-copy-large-summary\", ok && after.TotalAlloc-before.TotalAlloc < 1<<20)"
+      }
+    ],
+    "tests/consumer/rss_darwin.go": [
+      {
+        "line": 20,
+        "text": "return n * 1024"
+      }
+    ],
+    "tests/consumer/rss_linux.go": [
+      {
+        "line": 18,
+        "text": "return n * 1024"
+      }
+    ],
+    "tests/consumer/schemaquery.go": [
+      {
+        "line": 11,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/schemaquery\""
+      }
+    ],
+    "tests/consumer/workqueue.go": [
+      {
+        "line": 13,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/source\""
+      },
+      {
+        "line": 14,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/workspace\""
+      },
+      {
+        "line": 169,
+        "text": "ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)"
+      },
+      {
+        "line": 211,
+        "text": "for n := 0; n < 256; n++ {"
+      },
+      {
+        "line": 235,
+        "text": "time.Sleep(time.Millisecond)"
+      },
+      {
+        "line": 241,
+        "text": "workspaceEvidence[\"workQueueConcurrent\"] = map[string]int{\"workers\": 4, \"producers\": 4, \"uris\": len(accepted), \"notifications\": 1024}"
+      },
+      {
+        "line": 250,
+        "text": "ctx, cancel := context.WithTimeout(context.Background(), time.Second)"
+      }
+    ],
+    "tests/consumer/workspace.go": [
+      {
+        "line": 16,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/source\""
+      },
+      {
+        "line": 17,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/workspace\""
+      },
+      {
+        "line": 322,
+        "text": "for n := 0; n < 20000; n++ {"
+      },
+      {
+        "line": 333,
+        "text": "observed.err = fmt.Errorf(\"scanner did not finish after 20000 bounded batches\")"
+      }
+    ],
+    "tests/consumer/yaml.go": [
+      {
+        "line": 6,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/yamlview\""
+      },
+      {
+        "line": 61,
+        "text": "_, e = yamlview.Parse(ctx, snap(strings.Repeat(\"x\", 5*1024*1024+1)))"
+      }
+    ],
+    "tests/consumer/yamlvalue.go": [
+      {
+        "line": 9,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/source\""
+      },
+      {
+        "line": 10,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/yamlvalue\""
+      },
+      {
+        "line": 11,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/yamlview\""
+      },
+      {
+        "line": 18,
+        "text": "options := yamlvalue.Options{MaxNodes: 100000, Fields: []string{\"apiVersion\", \"kind\"}}"
+      },
+      {
+        "line": 69,
+        "text": "_, _, err = project(\"value: !!str on\\n\", yamlvalue.Options{MaxNodes: 100000, RejectExplicitTags: true})"
+      }
+    ],
+    "tests/consumer/yamlvalue_comments.go": [
+      {
+        "line": 10,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/source\""
+      },
+      {
+        "line": 11,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/yamlvalue\""
+      },
+      {
+        "line": 12,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/yamlview\""
+      },
+      {
+        "line": 17,
+        "text": "options := yamlvalue.Options{MaxNodes: 100000}"
+      },
+      {
+        "line": 142,
+        "text": "large := snap(prefix + \"#\" + strings.Repeat(\"x\", 5*1024*1024-len(prefix)-1))"
+      },
+      {
+        "line": 163,
+        "text": "check(\"trailing-comments-project-allocation\", after.TotalAlloc-before.TotalAlloc < repeats*1024*1024)"
+      }
+    ],
+    "tests/consumer/yamlvalue_keys.go": [
+      {
+        "line": 11,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/yamlvalue\""
+      },
+      {
+        "line": 12,
+        "text": "\"github.com/lazysnail1024/k8s-crd-toolkit/yamlview\""
+      },
+      {
+        "line": 17,
+        "text": "options := yamlvalue.Options{MaxNodes: 100000}"
+      },
+      {
+        "line": 99,
+        "text": "allocated := after.TotalAlloc - before.TotalAlloc"
+      },
+      {
+        "line": 100,
+        "text": "check(\"mapping-key-allocation-budget\", allocated < 12*1024*1024)"
+      }
+    ]
+  },
+  "sourceDigests": {
+    ".github/workflows/native.yml": "7a1cd4a2cee0a02987b03648a5da4895bfdbf0d9a201dab4681b98b5f137c678",
+    "CONTRACT.md": "38734de00a5a44f0c9d9bf81be7599c3f45016f9b7928d040815e7c252967aca",
+    "go.mod": "25b15cd147c60bff1558782a5d7463b6060532dde40f851b06138426775cd77c",
+    "go.sum": "273a64564c314a8202332060fd7135ef571c88b1343720fc5f88e78f4da43933",
+    "tests/README.md": "9006fe9e1745b35eac53cf73e5efbc5a694134636dcfd5ac81938e5db621aada",
+    "tests/ablate.py": "6d7fdb9479c0be1a43234ad0ee2f025ee30326d3abf3ad556dc569d19838e9d1",
+    "tests/assertions.py": "0c96125746b612867740b97a69e7e5294eb8dc8c2f559a387d4965999d2d95dc",
+    "tests/checkout_e2e.py": "3c8b8ab1fe868e594fa6a91365845ea4ae9e3507b4fea33fd37082f3ec64dbe2",
+    "tests/consumer/audit.go": "c448ff63b3c4c6e38fe61f0500bad8f3f6a4cddf06113e0d017020cc19208da6",
+    "tests/consumer/budget.go": "b19ad188e2d0e9e2932e0d69d884708bc4088d07e3e220a7ea22b645fd52724f",
+    "tests/consumer/coordination.go": "9f21271a559e9071e45b7b593ddb56a6a0dff4eb6d602f7183cc01200fd2f0c6",
+    "tests/consumer/deep.yaml": "94333ac7d446cd456f35eb591def06da30652285ad35de7cecb0ef4a7cb44d4e",
+    "tests/consumer/go.mod": "99c29daf8949818308dcf0a9333fa77f1c9c2782c2ce47c200db01a77cb79341",
+    "tests/consumer/index.go": "735876d0fb862ce25664430623f87573ee47f78ddc72518c68f1291df90c9b84",
+    "tests/consumer/index_context.go": "e2b6447585457bf423657ae6e11877964de444ac4f53d3a099ee7dc1e8b8d1bb",
+    "tests/consumer/index_prefix.go": "225d26d86693900894c20a1fff380a5edd4c07ade043d78d8011aafacce40c72",
+    "tests/consumer/main.go": "d6185bf98192b8d605f02a135376761a94ebf313ba95f8af6c08a2622395a431",
+    "tests/consumer/relations.go": "6971aaa285c018a1f7637c6400f6e180b89ede5841c6cca35138ce70958f81b5",
+    "tests/consumer/resume.go": "88402e16569e001d27711b95274263b0f01c76780d2c5a3e1a5381d4ce43b0c2",
+    "tests/consumer/retention.go": "09474fe09108a2675253a080f2a2a935e8af84f77e7ada88888c98aa35d39714",
+    "tests/consumer/reuse.go": "cdac36c59dee536478e98c6105d2eca7106d96d213ab35c916702642da8a13cf",
+    "tests/consumer/rss_darwin.go": "a52f4acd1741092b00866db137b3b98c6fa999e14523c7fffc2b7dc2cb8725bf",
+    "tests/consumer/rss_linux.go": "bd9b6f7773916f8fc6b5f268462bddd9a009bdc511ebd5ae953928a2ce5c31e7",
+    "tests/consumer/rss_windows.go": "d2f48316319c2551a8aab6486560746382b53e4885a552aaa01dcbf06289ec59",
+    "tests/consumer/schemaquery.go": "3c32098636d44c07e4142bd88e45a6f783378414d651f5c3ba3631e7372c90f2",
+    "tests/consumer/workqueue.go": "a94be03c1adc22172a2158b172be666c702e4656e331657fe5f8912b74ec69ba",
+    "tests/consumer/workspace.go": "c12f8275e5f9ca667019c5a16a172fa944368691de78000116cd49d7a5e44d39",
+    "tests/consumer/yaml.go": "b9f564a9bc294073689374d9ad02991547e08598b7ff0dc0c7000788b7f4210e",
+    "tests/consumer/yamlvalue.go": "b22799e40a8db575415a2a29abd9aeccbd404caba4a68ffbd8650045ef536a21",
+    "tests/consumer/yamlvalue_comments.go": "fd5c40ead414f4f1b124a5382da95a653af16258a0da33bad6a6273100a8c6ce",
+    "tests/consumer/yamlvalue_keys.go": "3d4f95ca90bff78f05d31b89dce0e0ad5e7d6c02e63fb5ece2c020160a24ddec",
+    "tests/delivery.py": "eaf8d0c9868061cae8436f76cbc1937abe8dca61400340b1e490829be85598a5",
+    "tests/delivery_failures_e2e.py": "c95138a98b13a56267a2cc84f054e6123bfc9c35fefc9160b6ce1517c5677bf0",
+    "tests/e2e.py": "e219d77d37c715c27882a20dc1c9c235a2f5965b2c5a99878f66b4b53287f9cc",
+    "tests/native.py": "9c64c3fd22bd6c3315aea2768c0c8384c2fa1b2acac97fd47e88b443a9680a76",
+    "tests/native_delivery_e2e.py": "13bb885c67579992fab5ba63b381cec9a45984a42b11719ecbae47f53133f4d1",
+    "tests/probes/index-query/main.go": "cd617251c669a54086ba274dfe3d6a2810bae4bd7966b77382d774909101785e",
+    "tests/probes/index-scope/main.go": "66d32bf9c9c454cb1956ce2862dfc8a3b5a41a8536dae6b26f9311ff72b7bb8f",
+    "tests/runner_effectiveness_e2e.py": "40fe6a455372dfeedc616d14da19885cea9369dfd9f93e1cc7320d24dced3224",
+    "tests/snapshot_e2e.py": "a762aa341f5bf1f95ffe390fa974ffb1a2e24f9a4092d54826d087d42fbfbcf0",
+    "tests/vendor_e2e.py": "3f038f822c11b78bd1f513f697fbb361918b0130e85c1ba49d13cc5f85f0806f"
+  },
+  "coldCacheObligations": {
+    "native": "content snapshot in standalone module; compilation cache permitted",
+    "delivery": "fresh empty GOMODCACHE and offline local proxy"
+  },
+  "measurementStatus": "Local Linux baseline measured; hosted matrix and finite trend window tracked separately"
+}

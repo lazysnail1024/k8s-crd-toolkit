@@ -10,10 +10,12 @@ import sys
 import tempfile
 import time
 
+import os
+CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 OUT = ROOT / 'artifacts/runner-effectiveness'
 OUT.mkdir(parents=True, exist_ok=True)
-report = {'runID': str(time.time_ns()), 'cases': [], 'passed': False}
+report = {'schemaVersion':1,'executionIdentity':CI_IDENTITY,'runID': str(time.time_ns()), 'cases': [], 'passed': False}
 
 
 def invoke(name, command, cwd, expected, env=None):

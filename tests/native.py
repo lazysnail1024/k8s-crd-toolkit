@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Run existing public consumers natively from a standalone content-pinned module."""
 import argparse,hashlib,json,os,pathlib,platform,shutil,subprocess,sys,tempfile,time,zipfile
-from assertions import parse_assertions
+from assertions import parse_assertions, exact_stage_inventory
+import os
+CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'tools'));from snapshot import create
 p=argparse.ArgumentParser();p.add_argument('--expected-platform',required=True);p.add_argument('--cc-version');p.add_argument('--source-commit',help='require module bytes to match this Git commit');p.add_argument('--output',type=pathlib.Path,default=ROOT/'artifacts/native');args=p.parse_args();out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
 env=os.environ.copy();env.update(GOWORK='off',CGO_ENABLED='1',GOTOOLCHAIN='local');go=env.get('GO') or (str(pathlib.Path(env['GOROOT'])/'bin/go') if env.get('GOROOT') else shutil.which('go'));cc=env.get('CC') or ('gcc' if os.name=='nt' else 'cc')
-report={'expectedPlatform':args.expected_platform,'python':sys.version,'host':platform.platform(),'runnerImage':{k:env.get(k) for k in ('ImageOS','ImageVersion','RUNNER_OS','RUNNER_ARCH')},'steps':[],'assertions':{},'stageResults':{}}
+report={'executionIdentity':CI_IDENTITY,'schemaVersion':1,'buildRole':'ordinary','buildMode':'public-consumer','productVersion':((ROOT/'VERSION').read_text().strip() if (ROOT/'VERSION').exists() else 'unavailable'),'producer':{'runID':os.getenv('GITHUB_RUN_ID','local'),'attempt':os.getenv('GITHUB_RUN_ATTEMPT','1'),'job':os.getenv('GITHUB_JOB','local')},'sourceCommit':args.source_commit or (subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip() if (ROOT/'.git').exists() else None),'contractDigest': hashlib.sha256((ROOT/'CONTRACT.md').read_bytes()).hexdigest(),'expectedPlatform':args.expected_platform,'python':sys.version,'host':platform.platform(),'runnerImage':{k:env.get(k) for k in ('ImageOS','ImageVersion','RUNNER_OS','RUNNER_ARCH')},'steps':[],'assertions':{},'stageResults':{}}
 started=time.monotonic()
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
 def run(argv,cwd,timeout=180):
@@ -30,7 +32,7 @@ try:
  if args.cc_version:
   report['assertions']['cCompilerVersion']=args.cc_version in cc_output
   if not report['assertions']['cCompilerVersion']:raise RuntimeError('C compiler version does not match pinned CI toolchain')
- manifest=create(out/'module-proxy');report['snapshot']=manifest
+ manifest=create(out/'module-proxy');report['snapshot']=manifest;report['dependencyDigest']=sha(ROOT/'go.sum');report['sourceTree']=subprocess.check_output(['git','rev-parse','HEAD^{tree}'],cwd=ROOT,text=True).strip() if (ROOT/'.git').exists() else None;report['dirty']=bool(subprocess.check_output(['git','status','--porcelain','--untracked-files=no'],cwd=ROOT,text=True).strip()) if (ROOT/'.git').exists() else True
  report['gitProvenance']={'available':(ROOT/'.git').exists()}
  if args.source_commit:
   if not report['gitProvenance']['available']:raise RuntimeError('source commit verification requires Git metadata')
@@ -80,6 +82,8 @@ try:
 except Exception as e:report['error']=repr(e)
 finally:
  report['elapsedSeconds']=round(time.monotonic()-started,6)
+ stage_contract=json.loads((ROOT/'tests/native-contract.json').read_text())
+ report['assertions']['exactAssertionInventory']=exact_stage_inventory(report['stageResults'],stage_contract,args.expected_platform)
  report['assertions']['requiredNonemptySuites']=set(report['stageResults'])=={'source','edit','yaml','yamlvalue','schemaquery','audit','budget','retention','resume','resources','index','workspace'} and all(bool(v) for v in report['stageResults'].values())
  report['passed']='error' not in report and bool(report['assertions']) and all(report['assertions'].values()) and all(s['exitCode']==0 for s in report['steps']);report['replay']=sys.argv
  text=json.dumps(report,indent=2);(out/'report.json').write_text(text);(out/('report-'+str(time.time_ns())+'.json')).write_text(text);print(json.dumps({'passed':report['passed'],'assertions':report['assertions'],'error':report.get('error')}));sys.exit(0 if report['passed'] else 1)

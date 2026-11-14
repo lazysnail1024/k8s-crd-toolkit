@@ -80,3 +80,5 @@ PR and main CI execute independent Go module consumers on all five platforms, pl
 - [Documentation index](docs/README.md)
 
 First-party code and documentation use [MIT](LICENSE). Third-party code retains its own licenses. [go.mod](go.mod) and [go.sum](go.sum) pin tree-sitter Go v0.25.0, jsonschema/v6 v6.0.3, yaml.v3 v3.0.1 and sigs YAML v1.6.0. The YAML grammar uses tree-sitter-yaml `a1c4812a73ec` with the local bounded-scanner patch; see its [source and license notices](yamlview/internal/parser/grammar/README.md).
+
+Contributor build, CI, fuzz and downstream acceptance commands are in [DEVELOPMENT.md](DEVELOPMENT.md).

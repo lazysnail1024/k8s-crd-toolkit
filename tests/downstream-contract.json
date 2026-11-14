@@ -1,0 +1,582 @@
+{
+  "zed-argocd": {
+    "compilerPackages": [
+      "github.com/lazysnail1024/k8s-crd-toolkit/edit",
+      "github.com/lazysnail1024/k8s-crd-toolkit/index",
+      "github.com/lazysnail1024/k8s-crd-toolkit/schemaquery",
+      "github.com/lazysnail1024/k8s-crd-toolkit/source",
+      "github.com/lazysnail1024/k8s-crd-toolkit/workspace",
+      "github.com/lazysnail1024/k8s-crd-toolkit/yamlvalue",
+      "github.com/lazysnail1024/k8s-crd-toolkit/yamlview",
+      "github.com/lazysnail1024/k8s-crd-toolkit/yamlview/internal/parser",
+      "github.com/lazysnail1024/k8s-crd-toolkit/yamlview/internal/parser/grammar"
+    ],
+    "suites": {
+      "tests/publication_e2e.py": {
+        "reportFile": "report.json",
+        "caseKey": "id",
+        "checksKey": "checks",
+        "passKey": "passed",
+        "cases": {
+          "initial-publications": [
+            "activeEmpty",
+            "allResources"
+          ],
+          "unchanged-payloads-suppressed": [
+            "newOpenVersion",
+            "noUnrelatedLocalRepublish",
+            "onlyChangedURI"
+          ],
+          "changed-empty-version-published": [
+            "empty",
+            "exactOne",
+            "localVersionIfPublished"
+          ],
+          "cross-file-same-version-error": [
+            "active",
+            "other"
+          ],
+          "cross-file-same-version-clear": [
+            "active",
+            "other"
+          ],
+          "direct-budget-failure": [
+            "explicit"
+          ],
+          "budget-full-replacement": [
+            "currentVersion"
+          ],
+          "configuration-failure-clears-prior-error": [
+            "activeCleared",
+            "configError"
+          ],
+          "configuration-recovery-restores-same-version-error": [
+            "restored"
+          ],
+          "same-version-payload-change-after-recovery": [
+            "activeClear",
+            "otherError"
+          ],
+          "close-restores-disk": [
+            "activeError",
+            "closedVersion",
+            "otherClear"
+          ],
+          "removed-empty-document-clear": [
+            "explicitEmpty"
+          ],
+          "cancelled-edit-close-stays-clear": [
+            "clear",
+            "noStaleErrors"
+          ],
+          "document-schema-error-and-clear": [
+            "closeRemainsClear",
+            "localClearWhenPublished",
+            "localCloseClear",
+            "localErrorWhenPublished",
+            "localVersionsCurrent",
+            "workspaceClear",
+            "workspaceError"
+          ],
+          "document-reopen-restores-diagnostics": [
+            "bothPhasesRestoredAfterClear",
+            "clearPayload",
+            "localClearThenRestore",
+            "workspaceRestored"
+          ],
+          "late-local-cannot-clear-current-domain-error": [
+            "allAcceptedInputsRetainDomainError"
+          ],
+          "root-removal-clear": [
+            "explicitClear"
+          ],
+          "shutdown": [
+            "exit0"
+          ]
+        },
+        "runnerSHA256": "1e5ea6473754b77dfc17056b39eb984bc9846d5dbb4f44b57d96080cd47a15ed"
+      },
+      "tests/alias_projection_lsp_e2e.py": {
+        "reportFile": "report.json",
+        "caseKey": "id",
+        "checksKey": "checks",
+        "passKey": "passed",
+        "cases": {
+          "3.0.0-scalar-alias-value": [
+            "derivedLabel",
+            "exactSiblingSymbol",
+            "hoverTarget",
+            "hoverType",
+            "noDerivedCompletion",
+            "noDerivedEdit",
+            "noDiagnostics",
+            "noInferredDefinition",
+            "useRange"
+          ],
+          "3.0.0-no-derived-reference-range": [
+            "onlyExactDeclaration"
+          ],
+          "3.0.0-merge-derived-and-exact-errors": [
+            "derivedLabel",
+            "derivedRange",
+            "exactCodes",
+            "exactSibling",
+            "noMergeEdit"
+          ],
+          "3.0.0-shared-anchor-and-exact-sibling-fix": [
+            "exactBytes",
+            "exactSiblingFix",
+            "onlyUnrelatedError",
+            "sharedAnchorNoFix",
+            "versioned"
+          ],
+          "3.0.0-explicit-override-exact-definition": [
+            "exactTarget",
+            "noDiagnostics"
+          ],
+          "3.0.0-recursive-refusal": [
+            "explicitIncomplete",
+            "noHover"
+          ],
+          "3.0.0-recovery": [
+            "hover",
+            "noDiagnostics"
+          ],
+          "3.0.0-shutdown": [
+            "exit"
+          ],
+          "3.5.6-scalar-alias-value": [
+            "derivedLabel",
+            "exactSiblingSymbol",
+            "hoverTarget",
+            "hoverType",
+            "noDerivedCompletion",
+            "noDerivedEdit",
+            "noDiagnostics",
+            "noInferredDefinition",
+            "useRange"
+          ],
+          "3.5.6-no-derived-reference-range": [
+            "onlyExactDeclaration"
+          ],
+          "3.5.6-merge-derived-and-exact-errors": [
+            "derivedLabel",
+            "derivedRange",
+            "exactCodes",
+            "exactSibling",
+            "noMergeEdit"
+          ],
+          "3.5.6-shared-anchor-and-exact-sibling-fix": [
+            "exactBytes",
+            "exactSiblingFix",
+            "onlyUnrelatedError",
+            "sharedAnchorNoFix",
+            "versioned"
+          ],
+          "3.5.6-explicit-override-exact-definition": [
+            "exactTarget",
+            "noDiagnostics"
+          ],
+          "3.5.6-recursive-refusal": [
+            "explicitIncomplete",
+            "noHover"
+          ],
+          "3.5.6-recovery": [
+            "hover",
+            "noDiagnostics"
+          ],
+          "3.5.6-shutdown": [
+            "exit"
+          ]
+        },
+        "runnerSHA256": "942cbf57cec848f60c62900ae7d6d2c0e117d41e3600f90056ee3e785cf44cd7"
+      }
+    }
+  },
+  "zed-argo-workflows": {
+    "compilerPackages": [
+      "github.com/lazysnail1024/k8s-crd-toolkit/edit",
+      "github.com/lazysnail1024/k8s-crd-toolkit/index",
+      "github.com/lazysnail1024/k8s-crd-toolkit/schemaquery",
+      "github.com/lazysnail1024/k8s-crd-toolkit/source",
+      "github.com/lazysnail1024/k8s-crd-toolkit/workspace",
+      "github.com/lazysnail1024/k8s-crd-toolkit/yamlvalue",
+      "github.com/lazysnail1024/k8s-crd-toolkit/yamlview",
+      "github.com/lazysnail1024/k8s-crd-toolkit/yamlview/internal/parser",
+      "github.com/lazysnail1024/k8s-crd-toolkit/yamlview/internal/parser/grammar"
+    ],
+    "suites": {
+      "tests/e2e/wf-local-rename.py": {
+        "reportFile": "results.json",
+        "caseKey": "case",
+        "checksKey": "assertions",
+        "passKey": "pass",
+        "cases": {
+          "task-declaration": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "task-static-reference": [
+            "changed_reference_not_old_binding",
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "old_version_ignored",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "task-dependencies": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "step-reference": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "input-parameter-call-argument": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "input-parameter-expression": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "output-parameter": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "output-artifact-expression": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "input-artifact": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "workflow-parameter": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "template-with-static-tags": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "cron-artifact": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "mixed-foreign-and-unrelated": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "unicode-crlf": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "unrelated-dynamic-template": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "computed-index-workflow-reference": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "computed-index-target-refused": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "raw-output-parameter-reference": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "raw-artifact-reference": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "expression-dot-to-string-index": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "unknown-member": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "incomplete-sibling-scope": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "coupled-workflow-entrypoint": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "index-needs-expression-tag": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "expression-string-literal-unchanged": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "step-self-hook-declaration": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "step-self-hook-reference": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "malformed-expression-tail": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "malformed-expression-parenthesis": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "malformed-raw-expression": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "expression-escaped-literal": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "expression-raw-literal": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "expression-comment-preserved": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "expression-unicode-before-member": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "expression-shadowed-input": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "expression-shadow-initializer": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "expression-unrelated-let": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "env-static-refusal": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "env-dynamic-refusal": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "env-get-refusal": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "env-shadow-refusal": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "env-alias-refusal": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "env-unrelated-namespace": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "env-literal-preserved": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "env-selector-reference": [
+            "disk_unchanged",
+            "exact_bytes",
+            "no_new_errors",
+            "prepare_succeeds",
+            "undo_restores_diagnostics"
+          ],
+          "workflow-reserved-json": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "collision": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "public": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "derived-alias": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "dynamic-index": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "unknown-static": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "unknown-collection": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "external-template": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "incomplete-same-scope": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "duplicate-declaration": [
+            "disk_unchanged",
+            "rename_refused"
+          ],
+          "global-output": [
+            "disk_unchanged",
+            "rename_refused"
+          ]
+        },
+        "runnerSHA256": "4fd83522e852eff4a54117657852ef052db5fc4e3a41695f9a710828c36148e2"
+      },
+      "tests/e2e/wf-shared-yaml-projection.py": {
+        "reportFile": "results.json",
+        "caseKey": "case",
+        "checksKey": "assertions",
+        "passKey": "pass",
+        "cases": {
+          "partial-root-key": [
+            "exactBytes",
+            "noProtocolError",
+            "recoveredDiagnostics",
+            "recoveredHover",
+            "usefulCompletion"
+          ],
+          "partial-template-key": [
+            "exactBytes",
+            "noProtocolError",
+            "recoveredDiagnostics",
+            "recoveredHover",
+            "usefulCompletion"
+          ],
+          "selected-duplicate-key": [
+            "cliRefusal",
+            "explicitRefusal",
+            "noPartialResult",
+            "recoveredDiagnostics",
+            "recoveredHover"
+          ],
+          "explicit-standard-tag": [
+            "cliRefusal",
+            "explicitRefusal",
+            "noPartialResult",
+            "recoveredDiagnostics",
+            "recoveredHover"
+          ]
+        },
+        "runnerSHA256": "f43ac017bcace6290704e62fe42bff4638344f8343b6a5d78bf21c4e1f683cdd"
+      }
+    }
+  }
+}
