@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Exercise failed reruns through real outer-runner processes, retaining sentinels."""
 import hashlib,json,os,pathlib,shutil,subprocess,sys,tempfile,time
+import os
+CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 out=ROOT/'artifacts/delivery-failures';out.mkdir(parents=True,exist_ok=True)
 rows=[]
@@ -37,5 +39,5 @@ for case in ['missing-go','missing-cc','invalid-report','timeout','rss-guard-del
   shutil.copytree(repo/'tests',dest/'test-inputs',ignore=shutil.ignore_patterns('__pycache__'))
   row=dict(case=case,argv=argv,stdout=p.stdout,stderr=p.stderr,exitCode=p.returncode,passed=passed,artifact=str(dest),runnerSHA256=hashlib.sha256((repo/'tests/native_delivery_e2e.py').read_bytes()).hexdigest())
   (dest/'invocation.json').write_text(json.dumps(row,indent=2));rows.append(row)
-report={'cases':rows,'passed':all(r['passed'] for r in rows)}
+report={'schemaVersion':1,'executionIdentity':CI_IDENTITY,'cases':rows,'passed':all(r['passed'] for r in rows)}
 (out/'report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report));sys.exit(0 if report['passed'] else 1)

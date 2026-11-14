@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Verify real Git checkouts preserve module bytes and remain consumable."""
 import argparse,hashlib,json,os,pathlib,shutil,subprocess,sys,tempfile,time,traceback,zipfile
+import os
+CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser();p.add_argument('--output',type=pathlib.Path,default=ROOT/'artifacts/checkout');p.add_argument('--without-attributes',action='store_true');args=p.parse_args()
 out=args.output.resolve();out.mkdir(parents=True,exist_ok=True);run_id=str(time.time_ns())
-report={'replay':sys.argv,'environment':{k:os.environ.get(k) for k in ('GO','GOROOT','GOMODCACHE','GOCACHE','CGO_ENABLED','GOWORK','CC')},'steps':[],'cases':[],'assertions':{},'passed':False}
+report={'schemaVersion':1,'executionIdentity':CI_IDENTITY,'replay':sys.argv,'environment':{k:os.environ.get(k) for k in ('GO','GOROOT','GOMODCACHE','GOCACHE','CGO_ENABLED','GOWORK','CC')},'steps':[],'cases':[],'assertions':{},'passed':False}
 def save():
  text=json.dumps(report,indent=2)+'\n';(out/'report.json').write_text(text);(out/('report-'+run_id+'.json')).write_text(text)
 def run(argv,cwd):

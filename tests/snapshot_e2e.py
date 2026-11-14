@@ -5,10 +5,12 @@ The Windows-default subprocess is an isolated environment experiment, not a
 native Windows run. Native platform acceptance remains the CI matrix's job.
 """
 import argparse,hashlib,json,pathlib,platform,subprocess,sys,time,zipfile,zlib
+import os
+CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 p=argparse.ArgumentParser();p.add_argument('--output',type=pathlib.Path,default=ROOT/'artifacts/snapshot');args=p.parse_args()
 out=args.output.resolve();out.mkdir(parents=True,exist_ok=True);run_id=str(time.time_ns())
-report={'replay':sys.argv,'python':sys.version,'platform':platform.platform(),'zlibCompileVersion':zlib.ZLIB_VERSION,'zlibRuntimeVersion':zlib.ZLIB_RUNTIME_VERSION,'steps':[],'assertions':{},'passed':False}
+report={'schemaVersion':1,'executionIdentity':CI_IDENTITY,'replay':sys.argv,'python':sys.version,'platform':platform.platform(),'zlibCompileVersion':zlib.ZLIB_VERSION,'zlibRuntimeVersion':zlib.ZLIB_RUNTIME_VERSION,'steps':[],'assertions':{},'passed':False}
 # Only reproduce the constructor default observed in Windows CI; run the real CLI.
 windows_default='''import runpy,sys,zipfile
 original=zipfile.ZipInfo.__init__

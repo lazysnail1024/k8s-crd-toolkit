@@ -2,12 +2,14 @@
 """Build the public consumer from an explicit module zip with a fresh offline cache."""
 import hashlib,json,os,pathlib,shutil,subprocess,sys,tempfile,time,zipfile
 from assertions import parse_assertions
+import os
+CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 root=pathlib.Path(__file__).resolve().parents[1]
 manifest_path=pathlib.Path(sys.argv[1]).resolve();proxy_path=pathlib.Path(sys.argv[2]).resolve();manifest=json.loads(manifest_path.read_text())
 env=os.environ.copy();env.update(GOWORK='off',CGO_ENABLED='1',GOTOOLCHAIN='local');go=env.get('GO') or (env['GOROOT']+'/bin/go' if env.get('GOROOT') else shutil.which('go'))
 cache=pathlib.Path(env['GOMODCACHE'])/'cache/download';out=root/'artifacts/delivery';out.mkdir(parents=True,exist_ok=True)
 sha=lambda p:hashlib.sha256(p.read_bytes()).hexdigest()
-report={'replay':f'python3 tests/delivery.py {manifest_path} {proxy_path}','manifest':manifest,'steps':[],'assertions':{},'stageResults':{},'testHashes':{str(p.relative_to(root)):sha(p) for p in (root/'tests').rglob('*') if p.is_file()},'proxyHashes':{}}
+report={'schemaVersion':1,'executionIdentity':CI_IDENTITY,'replay':f'python3 tests/delivery.py {manifest_path} {proxy_path}','manifest':manifest,'steps':[],'assertions':{},'stageResults':{},'testHashes':{str(p.relative_to(root)):sha(p) for p in (root/'tests').rglob('*') if p.is_file()},'proxyHashes':{}}
 def run(argv,cwd):
  try:
   p=subprocess.run(argv,cwd=cwd,env=env,text=True,capture_output=True,timeout=120);r=dict(command=argv,stdout=p.stdout,stderr=p.stderr,exitCode=p.returncode)

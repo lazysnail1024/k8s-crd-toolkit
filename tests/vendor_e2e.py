@@ -12,12 +12,14 @@ import time
 
 from assertions import parse_assertions
 
+import os
+CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 root = pathlib.Path(__file__).resolve().parents[1]
 env = os.environ | {'GOWORK': 'off', 'CGO_ENABLED': '1'}
 go = env.get('GO') or (env['GOROOT'] + '/bin/go' if env.get('GOROOT') else shutil.which('go'))
 out = root / 'artifacts/vendor-probe'
 out.mkdir(parents=True, exist_ok=True)
-report = {'replay': sys.argv, 'steps': [], 'restoredHashes': {}, 'stageResults': {}, 'passed': False}
+report = {'schemaVersion':1,'executionIdentity':CI_IDENTITY,'replay': sys.argv, 'steps': [], 'restoredHashes': {}, 'stageResults': {}, 'passed': False}
 
 
 def sha(path):
