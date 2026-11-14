@@ -1,0 +1,10 @@
+{
+  "tools/ci_plan.py": "8bbc05b10a866e40d64191acd82d81689abe273bfbdff1ca70f39a955906b889",
+  "tools/ci_receipt.py": "dfbc66c61bcf2e192ac218b101eaafbbeef0702c7a723b7420395621836b0102",
+  "tools/ci_report_contracts.py": "3ae6d9372487d8188c29a309c24431c6a2aaf57af05462fe335c4e282cefc379",
+  "tests/assertions.py": "2daa8b8c8a2ce9e7f304e9c3cb5de040a9aafd003fd06a23c269aa2fa7c8f29e",
+  "tests/native-contract.json": "88b0289ae95ccc31c8f17ba43af6b098e62ee094d157d070c33dcc32e9f5cc83",
+  "tests/property-contract.json": "64b4570f6d40487bfc6aa3321f77d47c1fcd76d410dae4d425a4e45936b586bb",
+  "tests/downstream-contract.json": "dfc3e277d032aa0ca6b088d060a30d7752c56a9b3bb34d20b90d4160e0593f0d",
+  "tests/downstream-pins.json": "78f5739d35f4fec99569073878aee839d1251ab5b6991d9c589385eef7670ba0"
+}

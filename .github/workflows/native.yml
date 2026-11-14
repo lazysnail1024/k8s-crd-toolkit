@@ -1,457 +1,111 @@
-name: Native public consumer
-on:
-  push:
-    branches:
-      - main
+name: P02 Toolkit gate diagnostics (synthetic fixtures only)
+'on':
   pull_request:
-  schedule:
-    - cron: '37 3 * * 2'
   workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [scenario, manual-green, cancel-upstream]
+        default: manual-green
+        description: Diagnostic override; never executes product tests
+      target_pr:
+        type: string
+        default: ''
+        description: Required for cancellation replacement; original PR number
 permissions:
   contents: read
-concurrency:
-  group: toolkit-ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  plan:
-    runs-on: ubuntu-24.04
-    outputs:
-      full: ${{ steps.select.outputs.full }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - id: select
-        env:
-          BASE: ${{ github.event.pull_request.base.sha }}
-          HEAD: ${{ github.event.pull_request.head.sha }}
-          EVENT: ${{ github.event_name }}
-        run: |
-          python - <<'PYCODE'
-          import json, os, subprocess
-          from pathlib import Path
-          paths=['<unavailable-diff>']
-          if os.environ['EVENT']=='pull_request':
-              result=subprocess.run(['git','diff','--name-status','-z','--no-renames',os.environ['BASE'],os.environ['HEAD']],capture_output=True)
-              if result.returncode==0:
-                  tokens=result.stdout.decode().split('\0'); paths=[]
-                  for i in range(0,len(tokens)-1,2):
-                      status,path=tokens[i:i+2]; paths.append(path if status in ('M','A') else status+':'+path)
-          Path('artifacts').mkdir(exist_ok=True)
-          Path('artifacts/paths.json').write_text(json.dumps(paths))
-          command=['python','tools/ci_plan.py','plan','--paths','artifacts/paths.json','--output','artifacts/plan.json','--sha',os.environ['GITHUB_SHA'],'--base',os.environ['BASE'] or 'unknown','--head',os.environ['HEAD'] or os.environ['GITHUB_SHA']]
-          command.append('--full') # Keep full active until hosted selection acceptance.
-          subprocess.run(command,check=True)
-          plan=json.loads(Path('artifacts/plan.json').read_text())
-          with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('full='+str(bool(plan['selectedLanes'])).lower()+'\n')
-          PYCODE
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: toolkit-plan-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/plan.json
-          if-no-files-found: error
-  consumer:
-    needs: plan
-    if: needs.plan.outputs.full == 'true'
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: ubuntu-24.04
-            platform: linux/amd64
-            artifact: linux-amd64
-            cc: gcc-13
-            cc_version: '13.3.0'
-          - runner: ubuntu-24.04-arm
-            platform: linux/arm64
-            artifact: linux-arm64
-            cc: gcc-13
-            cc_version: '13.3.0'
-          - runner: macos-15-intel
-            platform: darwin/amd64
-            artifact: macos-amd64
-            cc: clang
-            cc_version: 'Apple clang version 17.0.0'
-          - runner: macos-15
-            platform: darwin/arm64
-            artifact: macos-arm64
-            cc: clang
-            cc_version: 'Apple clang version 17.0.0'
-          - runner: windows-2025
-            platform: windows/amd64
-            artifact: windows-amd64
-            cc: gcc
-            cc_version: '15.2.0'
-    runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
-    env:
-      CC: ${{ matrix.cc }}
-      CGO_ENABLED: '1'
-      GOWORK: 'off'
-      GOTOOLCHAIN: local
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Scope CGO cache to the compiler and runner image
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/cache
-          { "$CC" --version; printf '%s\n' "$ImageOS" "$ImageVersion"; } > artifacts/cache/compiler.txt
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          check-latest: false
-          cache: true
-          cache-dependency-path: |
-            go.sum
-            artifacts/cache/compiler.txt
-            yamlview/**/*.inc
-            yamlview/**/*.h
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.14'
-      - name: Replay deterministic fuzz seeds on the native host
-        run: python tests/fuzz_seeds.py --platform "${{ matrix.platform }}"
-      - name: Build and run independent native consumer
-        run: python tests/native.py --expected-platform "${{ matrix.platform }}" --cc-version "${{ matrix.cc_version }}" --source-commit "${{ github.sha }}"
-      - name: Bind successful reports to this attempt
-        run: python tools/ci_receipt.py write --lane consumer --platform "${{ matrix.platform }}" --report artifacts/native/report.json --report artifacts/fuzz-seeds/report.json --directory artifacts/receipts
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: toolkit-receipt-consumer-${{ matrix.artifact }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/receipts/
-          if-no-files-found: error
-      - name: Retain failure and success evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: toolkit-native-${{ matrix.artifact }}-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            artifacts/native/
-            artifacts/fuzz-seeds/
-          if-no-files-found: error
-          retention-days: 30
-  index_regression:
-    needs: plan
-    if: needs.plan.outputs.full == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    env:
-      CC: gcc-13
-      CGO_ENABLED: '1'
-      GOWORK: 'off'
-      GOTOOLCHAIN: local
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Scope CGO cache to the compiler and runner image
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/cache
-          { "$CC" --version; printf '%s\n' "$ImageOS" "$ImageVersion"; } > artifacts/cache/compiler.txt
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          check-latest: false
-          cache: true
-          cache-dependency-path: |
-            go.sum
-            artifacts/cache/compiler.txt
-            yamlview/**/*.inc
-            yamlview/**/*.h
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.14'
-      - name: Vet public packages
-        run: go vet ./...
-      - name: Verify bounded query lock boundaries
-        run: go test -race -count=1 ./index
-      - name: Exercise concurrent public consumers with race detection
-        env:
-          GOFLAGS: '-race'
-        run: |
-          python tests/e2e.py index-race
-          python tests/e2e.py workspace-race
-      - name: Verify every registered mutation against a passing public baseline
-        run: python tests/ablate.py
-      - name: Bind successful reports to this attempt
-        run: python tools/ci_receipt.py write --lane index_regression --platform "linux/amd64" --report artifacts/index-race/report.json --report artifacts/workspace-race/report.json --report artifacts/ablations/report.json --directory artifacts/receipts
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: toolkit-receipt-index_regression-linux-amd64-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/receipts/
-          if-no-files-found: error
-      - name: Pack regression evidence without recompressing each file
-        if: always()
-        shell: bash
-        run: tar -I 'gzip -1' -cf "$RUNNER_TEMP/toolkit-index-regression.tar.gz" artifacts/
-      - name: Retain regression evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: toolkit-index-regression-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/toolkit-index-regression.tar.gz
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 30
-  delivery_regression:
-    needs: plan
-    if: needs.plan.outputs.full == 'true'
-    name: Source delivery and test validity
-    runs-on: ubuntu-24.04
-    timeout-minutes: 20
-    env:
-      CC: gcc-13
-      CGO_ENABLED: '1'
-      GOWORK: 'off'
-      GOTOOLCHAIN: local
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-      - name: Scope CGO cache to the compiler and runner image
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p artifacts/cache
-          { "$CC" --version; printf '%s\n' "$ImageOS" "$ImageVersion"; } > artifacts/cache/compiler.txt
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
-        with:
-          go-version-file: go.mod
-          check-latest: false
-          cache: true
-          cache-dependency-path: |
-            go.sum
-            artifacts/cache/compiler.txt
-            yamlview/**/*.inc
-            yamlview/**/*.h
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: '3.14'
-      - name: Verify selection truth table
-        run: |
-          python tests/ci_plan_e2e.py
-          python tests/ci_receipt_e2e.py
-          python tests/ci_receipt_portability_e2e.py
-          python tests/ci_negative_e2e.py
-          python tests/ci_trends_e2e.py
-          python tests/fuzz_effectiveness_e2e.py
-      - name: Reject false success, stale reports and unrelated mutation failures
-        run: python tests/runner_effectiveness_e2e.py
-      - name: Verify reproducible snapshot and committed checkout bytes
-        run: |
-          python tests/snapshot_e2e.py
-          python tests/checkout_e2e.py
-      - name: Verify restored vendor native inputs
-        run: python tests/vendor_e2e.py
-      - name: Consume an immutable module using an empty offline module cache
-        shell: bash
-        run: |
-          set -euo pipefail
-          export GOMODCACHE="$(go env GOMODCACHE)"
-          python tools/snapshot.py --output artifacts/module-proxy
-          python tests/delivery.py artifacts/module-proxy/manifest.json artifacts/module-proxy
-          git diff --exit-code -- go.mod go.sum
-      - name: Verify isolated delivery and explicit failure reasons
-        run: python tests/native_delivery_e2e.py
-      - name: Reject stale success after delivery infrastructure failures
-        run: python tests/delivery_failures_e2e.py
-      - name: Bind successful reports to this attempt
-        run: python tools/ci_receipt.py write --lane delivery_regression --platform "linux/amd64" --report artifacts/runner-effectiveness/report.json --report artifacts/snapshot/report.json --report artifacts/checkout/report.json --report artifacts/vendor-probe/report.json --report artifacts/delivery/report.json --report artifacts/native-delivery/report.json --report artifacts/delivery-failures/report.json --directory artifacts/receipts
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: toolkit-receipt-delivery_regression-linux-amd64-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/receipts/
-          if-no-files-found: error
-      - name: Pack delivery evidence
-        if: always()
-        shell: bash
-        run: tar -I 'gzip -1' -cf "$RUNNER_TEMP/toolkit-delivery-regression.tar.gz" artifacts/
-      - name: Retain delivery evidence
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: toolkit-delivery-regression-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/toolkit-delivery-regression.tar.gz
-          compression-level: 0
-          if-no-files-found: error
-          retention-days: 30
-  properties:
-    needs: plan
-    if: needs.plan.outputs.full == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    env:
-      CC: gcc-13
-      CGO_ENABLED: '1'
-      GOWORK: 'off'
-      GOTOOLCHAIN: local
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
-        with:
-          go-version-file: go.mod
-          cache: false
-      - run: python tests/e2e.py properties
-      - name: Bind successful reports to this attempt
-        run: python tools/ci_receipt.py write --lane properties --platform "linux/amd64" --report artifacts/properties/report.json --directory artifacts/receipts
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: toolkit-receipt-properties-linux-amd64-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/receipts/
-          if-no-files-found: error
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
-        with:
-          name: toolkit-properties-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/properties/
-          if-no-files-found: error
-  fuzz:
-    needs: plan
-    if: needs.plan.outputs.full == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    env:
-      CC: gcc-13
-      CGO_ENABLED: '1'
-      GOWORK: 'off'
-      GOTOOLCHAIN: local
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
-        with:
-          go-version-file: go.mod
-          cache: false
-      - run: python tests/fuzz.py --seconds ${{ github.event_name == 'schedule' && '600' || '60' }}
-      - name: Bind successful reports to this attempt
-        run: python tools/ci_receipt.py write --lane fuzz --platform "linux/amd64" --report artifacts/fuzz/report.json --directory artifacts/receipts
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: toolkit-receipt-fuzz-linux-amd64-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/receipts/
-          if-no-files-found: error
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
-        with:
-          name: toolkit-fuzz-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/fuzz/
-          if-no-files-found: error
-  downstream:
-    needs: plan
-    if: needs.plan.outputs.full == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    env:
-      CC: gcc-13
-      CGO_ENABLED: '1'
-      GOWORK: 'off'
-      GOTOOLCHAIN: local
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
-        with:
-          go-version-file: go.mod
-          cache: false
-      - run: |
-          python tests/downstream.py
-          python tests/downstream_receipt_e2e.py artifacts/downstream/report.json
-      - name: Bind successful reports to this attempt
-        run: python tools/ci_receipt.py write --lane downstream --platform "linux/amd64" --report artifacts/downstream/report.json --directory artifacts/receipts
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        with:
-          name: toolkit-receipt-downstream-linux-amd64-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/receipts/
-          if-no-files-found: error
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
-        if: always()
-        with:
-          name: toolkit-downstream-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/downstream/
-          if-no-files-found: error
-  required:
-    name: Toolkit required
-    if: always()
-    needs: [plan, consumer, index_regression, delivery_regression, properties, fuzz, downstream]
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-        with:
-          persist-credentials: false
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        with:
-          name: toolkit-plan-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/selection
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
-        if: needs.plan.outputs.full == 'true'
-        with:
-          pattern: toolkit-receipt-*-${{ github.run_id }}-${{ github.run_attempt }}
-          path: artifacts/receipts
-      - name: Validate expected jobs and fresh evidence
-        env:
-          NEEDS: ${{ toJSON(needs) }}
-        run: |
-          python - <<'PYCODE'
-          import json, os, subprocess
-          from pathlib import Path
-          needs=json.loads(os.environ['NEEDS'])
-          if needs.pop('plan')['result']!='success': raise SystemExit('planning failed')
-          Path('artifacts/results.json').write_text(json.dumps(needs))
-          subprocess.run(['python','tools/ci_plan.py','gate','--plan','artifacts/selection/plan.json','--results','artifacts/results.json','--sha',os.environ['GITHUB_SHA']],check=True)
-          plan=json.loads(Path('artifacts/selection/plan.json').read_text())
-          subprocess.run(['python','tools/ci_receipt.py','verify','--directory','artifacts/receipts','--lanes',json.dumps(plan['selectedLanes'])],check=True)
-          PYCODE
-  release:
-    name: Publish alpha after complete main acceptance
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    needs: [required]
+  prepare:
+    name: P02 fix synthetic fixture plan
     runs-on: ubuntu-24.04
     timeout-minutes: 5
-    permissions:
-      contents: write
+    outputs:
+      scenario: ${{ steps.plan.outputs.scenario }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.sha }}
-      - name: Release only the fully accepted main commit
-        shell: bash
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          version=$(tr -d '\r\n' < VERSION)
-          if [[ ! "$version" =~ ^0\.0\.1-alpha\.[0-9]+$ ]]; then
-            echo "VERSION is not an approved 0.0.1 alpha: $version" >&2
-            exit 1
-          fi
-          tag="v${version}"
-          current_main=$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/main" --jq '.object.sha')
-          if [[ "$current_main" != "$GITHUB_SHA" ]]; then
-            echo "Main advanced since this CI run; the newer run owns publication."
-            exit 0
-          fi
-          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Existing release $tag remains unchanged."
-            exit 0
-          fi
-          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${tag}" >/dev/null 2>&1; then
-            echo "Tag $tag already exists without a release; refusing to overwrite it." >&2
-            exit 1
-          fi
-          gh release create "$tag" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "k8s-crd-toolkit ${version}" \
-            --notes-file RELEASE_NOTES.md \
-            --prerelease
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: 3.14.0
+    - id: plan
+      name: Invoke frozen gate planner
+      env:
+        P02_TARGET_PR: ${{ inputs.target_pr }}
+        P02_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        P02_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      run: python p02/harness.py prepare --mode "${{ inputs.mode || 'scenario' }}" --output p02-out
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: p02-tk-plan-${{ github.run_id }}-${{ github.run_attempt }}
+        path: p02-out/
+        if-no-files-found: error
+  upstream:
+    name: P02 synthetic upstream (no product executes)
+    needs: prepare
+    if: needs.prepare.outputs.scenario != 'unexpected-skip'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    concurrency:
+      group: p02-tk-upstream-${{ github.repository }}-${{ github.event.pull_request.number || inputs.target_pr || github.ref }}
+      cancel-in-progress: true
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: 3.14.0
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: p02-tk-plan-${{ github.run_id }}-${{ github.run_attempt }}
+        path: p02-out
+    - name: Create explicit positive fixture with real plan/start/receipt CLI
+      run: python p02/harness.py fixtures --output p02-out
+    - name: Retain fixture before intentional failure or cancellation
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: p02-tk-fixture-${{ github.run_id }}-${{ github.run_attempt }}
+        path: p02-out/
+        if-no-files-found: error
+    - name: Wait for actual upstream job cancellation
+      if: needs.prepare.outputs.scenario == 'upstream-cancel'
+      run: python p02/harness.py wait-cancel --seconds 600 --output p02-out
+    - name: Apply intentional upstream failure after artifact retention
+      run: python p02/harness.py finish --output p02-out
+  acceptance:
+    name: Toolkit required
+    if: always()
+    needs: [prepare, upstream]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      with:
+        ref: ${{ github.sha }}
+        persist-credentials: false
+    - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+      with:
+        python-version: 3.14.0
+    - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: p02-tk-plan-${{ github.run_id }}-${{ github.run_attempt }}
+        path: p02-gate-input
+    - name: Retrieve upstream evidence when it exists
+      continue-on-error: true
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+      with:
+        name: p02-tk-fixture-${{ github.run_id }}-${{ github.run_attempt }}
+        path: p02-gate-input
+    - name: Run genuine frozen gate and preserve its actual exit
+      env:
+        P02_NEEDS_JSON: ${{ toJSON(needs) }}
+      run: python p02/harness.py gate --inputs p02-gate-input --output p02-gate-out
+    - if: always()
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+      with:
+        name: p02-tk-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+        path: p02-gate-out/
+        if-no-files-found: error
