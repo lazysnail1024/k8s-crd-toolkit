@@ -2,7 +2,7 @@
 
 A Go library for Kubernetes CRD source analysis. It provides immutable text snapshots, YAML structure and effective values, compiled JSON Schema queries, checked text edits, incremental symbol indexes and bounded workspace discovery. Argo domain rules, LSP servers, editor adapters and cluster operations remain in consumers.
 
-Published module: **[v0.0.1-alpha.1](https://github.com/lazysnail1024/k8s-crd-toolkit/releases/tag/v0.0.1-alpha.1)**. This is a Go source module, with no standalone binary to install. The API may change during alpha development. Published tags retain their original implementation; later changes on main require an explicit dependency upgrade.
+Published module: **[v0.0.1-alpha.1](https://github.com/lazysnail1024/k8s-crd-toolkit/releases/tag/v0.0.1-alpha.1)**. This is a Go source module, with no standalone binary to install. The published tag uses contract `toolkit-design-5`; current source uses `toolkit-design-6`. The API may change during alpha development. Published tags retain their original implementation; later changes on main require an explicit dependency upgrade.
 
 ## Use
 
@@ -52,7 +52,7 @@ func main() {
 | `index` | Definition/reference facts, invalidation tickets and cancellable bounded symbol queries |
 | `workspace` | Open buffers, read tickets, work bookkeeping, reconciliation and batched discovery |
 
-Current source uses contract `toolkit-design-6`. Its native parser lazily reuses at most two private OS-thread workers to limit allocator thread ownership. Go tree copying runs on the caller. Cancellation before admission does not start native work; admitted calls finish per-call cleanup before returning. Idle workers do not retain caller text or contexts. Applications still own their input budgets and analysis scheduling. No service, watcher, shared editor cache or Kubernetes client is started.
+The native parser lazily starts two private workers pinned to OS threads and reuses them for the process lifetime. Each call owns its parser and input; unfinished native parsing is requeued between 10 ms time slices. Go tree copying and successful tree cleanup run on the caller. Cancellation before admission does not start native work; admitted calls finish per-call cleanup before returning. Idle workers do not retain caller text or contexts. Applications still own their input budgets and analysis scheduling. No service, watcher, shared editor cache or Kubernetes client is started.
 
 ## Argo consumers
 
@@ -69,12 +69,13 @@ python3 tests/native.py --expected-platform linux/amd64
 
 Choose the actual host: `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64` or `windows/amd64`. Cross-compilation does not replace native execution. Python 3 is used for repository verification and source snapshots, not at consumer runtime.
 
-PR and main CI execute independent Go module consumers on all five platforms, plus Linux race and ablation checks. Publication requires successful checks for the same main commit. Existing tags and releases are never overwritten. See the [verification guide](tests/README.md) and [release notes](RELEASE_NOTES.md).
+The full CI plan executes independent Go module consumers and deterministic fuzz seeds on all five platforms. Linux jobs cover race checks, buildable ablations, source delivery, property relations, mutation fuzzing and pinned downstream LSP consumers. `Toolkit required` verifies the selected jobs and evidence from the same run attempt. PRs limited to the three explicitly allowlisted top-level prose files can select an exclusion plan; changes under `docs/` or `tests/` select the full plan. Main, scheduled and manual runs always use the full plan. Publication additionally requires that the accepted commit is still main. Existing tags and releases are never overwritten. See the [verification guide](tests/README.md) and [release notes](RELEASE_NOTES.md).
 
 ## Documentation and licenses
 
 - [Architecture and consumer boundaries](docs/architecture.md)
 - [Public API contract](CONTRACT.md)
+- [Contributor commands](DEVELOPMENT.md)
 - [Verification and distribution](tests/README.md)
 - [Lessons and regression evidence](docs/lessons-learned.md)
 - [Documentation index](docs/README.md)

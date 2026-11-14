@@ -8,7 +8,7 @@
 |---|---|---|
 | [`source`](../source/snapshot.go) | URI、revision、UTF-8 文本 → 不可变 `Snapshot`；字节位置 ↔ UTF-16 位置 | 快照持有文本和行索引；不读取文件、不解释 URI |
 | [`yamlview`](../yamlview/view.go) | context、快照 → 多文档 `View`、结构节点、原始 span、语法问题 | Go 结构视图；依赖 `source` 和内部 parser；`Raw` 可共享输入字符串的底层存储 |
-| [`yamlview/internal/parser`](../yamlview/internal/parser/parser.go) | 文本片段 → 复制出的 Go 节点 | 每次解析独占 Tree-sitter parser/tree，调用结束关闭；通过 CGO 接入 vendored grammar |
+| [`yamlview/internal/parser`](../yamlview/internal/parser/parser.go) | 文本片段 → 复制出的 Go 节点 | 进程内惰性启动两个固定 OS 线程 worker；每次调用独占 parser/输入，完成后释放；调用方复制 Go 节点并关闭成功返回的 tree；通过 CGO 接入 vendored grammar |
 | [`yamlvalue`](../yamlvalue/project.go) | 单文档视图、快照、预算与 tag 策略 → 严格有效值、来源、共享 anchor、调用方指定根字段提示 | 复用 yaml.v3 与 sigs YAML 解码；临时图在调用结束丢弃；依赖 `source` / `yamlview` |
 | [`schemaquery`](../schemaquery/query.go) | 已编译 jsonschema/v6 图、value path、当前值与预算 → metadata、类型、候选或显式未支持状态 | 无持久状态、加载器或 compiler；schema 与值由调用方持有且调用期间不可变 |
 | [`edit`](../edit/plan.go) | 基础快照、下一 revision、替换计划 → 校验后的新快照 | 无持久状态；依赖 `source`；不执行用户文件写入 |
@@ -19,7 +19,7 @@
 | [`workspace.Membership`](../workspace/membership.go) | 扫描轮次、文件观察 → 是否允许判为未见 | 当前轮次及其完成状态；文件表与每项 `Observation` 留在调用方 |
 | [`workspace.Scanner`](../workspace/scanner.go) | roots、筛选策略、单批工作量 → 文件路径、问题、扫描状态 | 待处理目录、已见目录身份、active/paused 游标；串行调用，不读取文件内容 |
 
-`Index`、`Documents`、两种队列和 `Membership` 各自同步内部状态；调用方仍须保护跨模块的“接受输入—记录文件状态—入队—发布”操作。`Scanner` 由一个所有者串行使用。公共库没有会话级总锁、文件 watcher、工作线程、重试定时器、插件配置解析或二进制发布流程。
+`Index`、`Documents`、两种队列和 `Membership` 各自同步内部状态；调用方仍须保护跨模块的“接受输入—记录文件状态—入队—发布”操作。`Scanner` 由一个所有者串行使用。除 parser 的两个原生执行 worker 外，公共库不启动应用分析或目录发现 worker，也没有会话级总锁、文件 watcher、重试定时器、插件配置解析或二进制发布流程。
 
 ## 文本、YAML 与编辑
 
@@ -35,7 +35,7 @@
 
 顶层 `---` 是恢复边界，因此前一文档的损坏不会必然吞掉后续文档。当前硬限制为输入 5 MiB、结构嵌套 256 层、最多 2,000 个文档；超限或取消返回错误，语法损坏则可通过 `Issues`、`Damaged`、`Complete` 表达。业务提取器决定损坏文档中的哪些事实仍然可信。
 
-内部 parser 在一次调用中创建 parser/tree，将节点复制成 Go 值后关闭原生对象。当前桥接使用 10 ms 的原生解析时间片，在片间检查取消并恢复同一次解析；时间片不是输入总时限。vendored scanner 的序列化预算通过线程局部标志报告，Go 在解析、检查和关闭期间锁定 OS 线程。细节见 [parser](../yamlview/internal/parser/parser.go) 与 [grammar 补丁说明](../yamlview/internal/parser/grammar/README.md)。
+内部 parser 首次接收未取消的调用时启动两个固定 OS 线程 worker，供整个进程复用；解析器和输入仍按调用隔离。每个 worker 执行一个 10 ms 原生时间片，随后将未完成的调用重新入队，让其他等待调用有机会获得执行。线程局部 scanner 预算标志在每片内重置、读取；时间片不是输入总时限。成功时 worker 关闭 parser、释放其输入，调用方复制 Go 节点并关闭 tree；取消或出错时原生资源在返回前清理。尚未入队即可响应取消，已接纳的调用则等待其清理完成；空闲 worker 不保留上一调用的文本或 context。细节见 [parser](../yamlview/internal/parser/parser.go) 与 [grammar 补丁说明](../yamlview/internal/parser/grammar/README.md)。
 
 `View` 不需要调用 `Close`，但保留 `View` 或 `Node.Raw` 可能保留输入全文。持久索引只应接收提取后的摘要；消费者自己的业务摘要也必须检查其字符串和结构的所有权。
 
@@ -152,9 +152,16 @@ Scanner 不跟随根以下的符号链接；根本身为符号链接会产生显
 
 ## 两个插件的实际引用与隔离
 
-两个语言服务器将公共包编译进各自 Go 程序，通过同一 Go module 源码提交接入；各自实例化 Documents、Index、WorkQueue 等，没有共享进程、缓存、文件表或 CD ↔ Workflows 的直接依赖。同一 source pin 和合同保证实现与 API 约定一致，不提供跨插件自动跳转或共享资源语义。实际模块提交与 Go pseudo-version 以各消费者的 [Argo CD 锁文件](https://github.com/lazysnail1024/zed-argocd/blob/main/contracts/toolkit.lock.json)和 [Workflows 锁文件](https://github.com/lazysnail1024/zed-argo-workflows/blob/main/contracts/toolkit.lock.json)为准。当前两个消费者共同固定 `db4adba0093ee2a709356aa1c2517e6d62644745`（Go pseudo-version `v0.0.0-20261112033740-db4adba0093e`）和 `toolkit-design-5` 合同；消费者同步保存合同原文与 SHA-256、模块完整 Git SHA、Go sums 和 vendor 文件清单。引用方式是 `go-module-commit`；公共库发布 alpha tag 不会使它们自动升级。
+两个语言服务器将公共包编译进各自 Go 程序，各自实例化 Documents、Index、WorkQueue 等，没有共享进程、缓存、文件表或 CD ↔ Workflows 的直接依赖。两个消费者独立选择源码 pin 和合同，当前并非同一依赖版本：
 
-源码 pin 锁定实现，合同摘要锁定接口约定，`go.sum` 及消费者 vendored 文件清单锁定实际依赖内容。公共仓文档更新、发布 tag 或分支前进不会自动升级插件。升级需在消费者显式更新这些锁、恢复并校验 CGO 支持文件，再跑消费者回归；不能以合同 ID 相同替代实现校验。
+| 消费者锁文件 | 合同 | Go pseudo-version / 实现提交 |
+|---|---|---|
+| [Argo CD](https://github.com/lazysnail1024/zed-argocd/blob/main/contracts/toolkit.lock.json) | `toolkit-design-6` | `v0.0.1-alpha.1.0.20261113165037-bc3a72298f10` / `bc3a72298f10731b46eaeb9bf7688c9ad0a52839` |
+| [Workflows](https://github.com/lazysnail1024/zed-argo-workflows/blob/main/contracts/toolkit.lock.json) | `toolkit-design-5` | `v0.0.0-20261112033740-db4adba0093e` / `db4adba0093ee2a709356aa1c2517e6d62644745` |
+
+两个消费者均提交合同原文及其 SHA-256、模块完整 Git SHA、Go sums 和 vendor 源码，引用方式均为 `go-module-commit`。精确身份以各仓库锁文件为准；本仓最新实现、已发布 toolkit 标签和插件实际使用的实现需要分别核对。固定依赖不提供跨插件自动跳转或共享资源语义。
+
+源码 pin 锁定实现，合同摘要锁定接口约定，`go.sum` 与锁文件中的 source/ZIP 摘要提供依赖内容身份，已提交的 vendor 源码是实际编译输入。Argo CD 另提交 `contracts/vendor-toolkit-sources.json` 逐文件清单；Workflows 的 vendor 脚本将恢复的 native 文件记录写到 `artifacts/vendor-native.json`，并非同一份持久化完整清单。公共仓文档更新、发布 tag 或分支前进不会自动升级插件。升级需在消费者显式更新这些锁、恢复并校验 CGO 支持文件，再跑消费者回归；不能以合同 ID 相同替代实现校验。
 
 | 边界 | Argo CD 消费者 | Workflows 消费者 |
 |---|---|---|
@@ -175,11 +182,11 @@ Scanner 不跟随根以下的符号链接；根本身为符号链接会产生显
 
 ## 当前 CI 与 alpha 发布门槛
 
-本仓是源码库，不生成 LSP 二进制，交付对象是 GitHub 源码 tag/Go Module。当前 `VERSION` 记录待发布 alpha；[发行说明](../RELEASE_NOTES.md)列出当前可用能力和限制。
+本仓是源码库，不生成 LSP 二进制，交付对象是 GitHub 源码 tag/Go Module。`VERSION` 仍为已发布的 `0.0.1-alpha.1`；[发行说明](../RELEASE_NOTES.md)描述该标签，当前主分支 API 以 `CONTRACT.md` 为准。
 
-- PR 与每次 `main` 推送均运行同一份 [native.yml](../.github/workflows/native.yml)：五平台本机编译/执行独立公共消费者，以及 Linux Go vet、race、真实 YAML 基线与 buildable ablation。
+- [native.yml](../.github/workflows/native.yml) 的完整执行包含五平台公共消费者与确定性 fuzz seed replay，以及 Linux Go vet/race、buildable ablation、源码交付、property、mutation fuzz 和固定下游 LSP 消费者。仅修改 `README.md`、`DEVELOPMENT.md`、`RELEASE_NOTES.md` 的 PR 可以形成显式排除计划；未知路径、删除、重命名、混合修改及不可用 diff 均执行完整计划。`main`、schedule、workflow_dispatch 始终执行完整计划。
 - 源码验收要求提交 hash 与构建输入按字节匹配，验证无本地 Go Module `replace`；artifact 保留输入、报告和失败证据，不能把某个平台的交叉编译当作另一个平台的执行证明。
-- `main` 上的发行 Job 依赖上述所有必选 Job 成功，并再次核对待发布的提交仍是远端 `main`；同名 release 已存在则不重复发布、tag 已存在但缺 release 则拒绝覆盖。PR 不授予发行写权限。
-- CI 性能优化使用 `setup-go` 对 Go 模块与构建缓存的官方支持，Python 按 3.14 minor 选用 runner 可用的 patch 版本；它们只复用工具链/构建缓存，**不跳过**原生或消融测试。新缓存首次未命中时不承诺加速。
+- `Toolkit required` 核对全部选中 job 和同一运行尝试的证据；完整计划需要十份 lane/platform 收据，并再次验证 fuzz/downstream 报告语义。`main` 发行 Job 依赖该门禁成功，并再次核对待发布提交仍是远端 `main`；同名 release 已存在则不重复发布、tag 已存在但缺 release 则拒绝覆盖。PR 不授予发行写权限。
+- consumer、index_regression、delivery_regression 使用按工具链和原生输入区分的 Go 构建缓存，并显式安装 Python 3.14；properties、fuzz、downstream 关闭该 Go cache 配置，使用 runner 提供的 Python。缓存只复用构建结果，已选中的测试仍实际执行。完整矩阵、命令和证据范围见[验证指南](../tests/README.md)。
 
 发布成功并不替代下游两个插件的真实 CLI/LSP/Zed 验收。两插件现有依赖不会因为这个发行 Job 而修改。

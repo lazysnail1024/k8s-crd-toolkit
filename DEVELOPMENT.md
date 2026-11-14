@@ -1,114 +1,82 @@
 # Development and acceptance
 
-Use the exact Go version in `go.mod`, a C compiler, Python 3, `GOWORK=off`,
-and `CGO_ENABLED=1`. The native workflow retains all five native platforms,
-public consumer stages, race checks, source delivery controls and mutations.
-`docs/testing-ci-baseline.json` pins the original inventory, source hashes,
-resource constraints and mutation oracles to the immutable baseline commit.
+This guide is the contributor entry point. [The verification guide](tests/README.md)
+contains the maintained suite inventory, CI selection rules, evidence contracts
+and failure controls. [The architecture](docs/architecture.md) describes runtime
+ownership; [CONTRACT.md](CONTRACT.md) defines the public API.
 
-Run `python tests/native.py --expected-platform linux/amd64 --source-commit
-$(git rev-parse HEAD)` for native public API acceptance. Run
-`python tests/e2e.py properties` for bounded input/overlay/index equivalence,
-and `python tests/fuzz.py --seconds 60` for three actual Go mutation campaigns.
-`python tests/fuzz_seeds.py --platform linux/amd64` runs deterministic seed
-replay; the native workflow executes this separately on all five platforms.
-Each command writes replayable evidence below `artifacts/`; fuzz stdout and
-failure corpora are retained even when a campaign fails. A successful seed
-replay or build alone is not a completed fuzz campaign. Periodic CI uses
-600 seconds per target; PRs use 60 seconds, two workers and 30 seconds of
-minimization. Replay a retained failure with Go's printed `-run` command. Receipts bind structured
-argv, the locked Go version, target/corpus hashes, raw streams and actual mutation
-execution counts; seed-only or baseline-only output cannot substantiate a campaign.
+## Build and run a public consumer
 
-`python tests/downstream.py` clones the two immutable consumers in
-`tests/downstream-pins.json`, injects the candidate runtime into their vendor
-trees, verifies actual compiler input paths and bytes, then executes real LSP
-projection, editing and lifecycle consumers. The derived sources are explicitly
-`downstream-candidate`; they never replace downstream checkouts or publish a
-release. `--checkout-cache DIRECTORY` may use local clones only as Git object
-sources. Both reports must bind the same three-SHA tuple. Use a fresh `--output`
-directory for every attempt. Candidate runtime bytes must match its commit. Original
-file modes and Git blob identities reconstruct the pinned consumer commit tree.
-The verifier independently reconstructs the only permitted change (candidate vendor
-replacement), the derived inventory and its actual patch digest. A source archive
-preserves file modes when evidence crosses CI artifact storage.
+Use the exact Go version in [go.mod](go.mod), a native C compiler and Python 3.
+Set `GOWORK=off` and `CGO_ENABLED=1`; native verification additionally requires
+`GOTOOLCHAIN=local`. `GO` may select a Go executable for the native/e2e runners;
+if `GOROOT` is set, it must belong to that executable. Other scripts invoke `go`
+from `PATH`, so keep the selected toolchain consistent.
 
-`Toolkit required` verifies all selected jobs and same-attempt reports. Partial
-reruns with older producer evidence require rerunning the complete workflow.
-Missing, duplicate, stale or incomplete reports fail. Pull requests changing only
-`README.md`, `DEVELOPMENT.md`, or `RELEASE_NOTES.md` can omit product lanes;
-the required gate still validates their explicit exclusion plan. Mixed, unknown,
-deleted, renamed, truncated or unavailable changes select full execution.
-Main, scheduled and manual runs always remain full. Run
-`python tests/ci_workflow_plan_e2e.py` to exercise the actual workflow planning
-entry, event boundaries, conservative fallbacks and exclusion gate.
+```sh
+GOWORK=off CGO_ENABLED=1 go build ./...
+python3 tests/native.py --expected-platform linux/amd64
+```
 
-The required job also runs `tests/evidence_semantics_e2e.py` against actual fuzz
-and downstream artifacts plus all ten same-attempt receipts, recording writer,
-plan gate and independent verifier results for positive and damaged evidence.
+Replace the platform with the actual native host: `linux/amd64`, `linux/arm64`,
+`darwin/amd64`, `darwin/arm64` or `windows/amd64`. The native runner builds an
+independent consumer from a content-addressed module, with no local `replace`.
+Add `--source-commit <full-commit-sha>` to require the packaged runtime inputs
+(including its contract and grammar notices) to match that commit exactly.
+Working-tree verification without this option does not establish a committed
+source identity.
 
-Verifier controls: `python tests/ci_plan_e2e.py` and
-`python tests/ci_receipt_e2e.py`, `python tests/ci_negative_e2e.py`, and
-`python tests/downstream_receipt_e2e.py artifacts/downstream/report.json`. After the implementation stage, run existing
-`python tests/ablate.py`, then `python tests/fuzz_effectiveness.py`.
-The fuzz effectiveness runner requires a compiled fuzz execution, exit code 1,
-and the designated behavior failure; build errors and infrastructure failures
-are not detected defects. `python tests/fuzz_effectiveness_e2e.py` replays
-process outcomes through the runner as reporting controls; it does not run or
-claim a product mutation campaign. Downstream
-controls use `--control old-vendor`, `wrong-sha`, `missing-file`, or
-`missing-consumer`; each must exit unsuccessfully and preserve its report.
+For a focused change, run the affected public consumer and its existing fault
+control. For example:
 
-`tools/ci_trends.py` consumes explicit warm/cold raw timing samples with run,
-attempt, SHA and evidence references. Each sample also declares `platform`,
-`toolchain`, `selection`, `fixture`, `resources`, `variant` (`baseline` or
-`candidate`), `passed`, nonempty `phases`, and an optional `pairID`. Failed
-samples declare `failureType`. Grouping preserves those execution dimensions
-and success/failure classification. Five warm pairs or three cold pairs must
-have both variants and alternate execution order before supporting median and
-outlier inspection; unpaired samples remain insufficient. Reports preserve raw
-samples and first failures and omit p95 estimates. These counts alone never
-establish optimization acceptance or replace the full matrix. Run
-`python tests/ci_trends_e2e.py` for the external reporting controls. The tool
-never substitutes CI duration for product measurements or changes limits.
-Hosted matrix, branch protection, seven-day observations and real Zed host
-acceptance are separate evidence, not claims established by local scripts.
+```sh
+python3 tests/e2e.py index
+GOFLAGS=-race python3 tests/e2e.py index-race
+go test -race -count=1 ./index
+python3 tests/ablate.py index-query-budget index-query-files index-query-scope
+```
 
-Property coverage maps to the seven P08 relations as follows:
+The complete native workflow also runs source delivery, deterministic property
+relations, mutation fuzzing and pinned downstream LSP acceptance. Their commands,
+output paths and limits are maintained in [tests/README.md](tests/README.md).
+Use fresh output directories where the runner requires them. A build failure,
+missing tool or stale report cannot stand in for a detected behavioral defect.
 
-| Relation | Toolkit evidence and boundary |
-| --- | --- |
-| Incremental versus final load | `properties`: `property-<seed>-change-<step>` and `property-<seed>-final-load` compare sequential immutable text against independently constructed final text. |
-| Cold versus reused facts | `properties`: `property-<seed>-warm-cold`; native `index`: `reuse-restores-new-revision`, `reuse-advances-generation-without-caller-reparse`, and `reuse-does-not-copy-large-summary` exercise explicit `Index.Reuse`, its semantic-change result and allocation boundary. This does not claim an implicit parser cache hit. |
-| Edit and undo | The source/edit stages check independently specified edited bytes and atomic rejection. Full domain diagnostic/navigation restoration belongs to the two downstream LSP consumers; toolkit does not produce those domain results. |
-| Target version isolation | Not a toolkit runtime capability: Argo target/schema selection belongs to the pinned downstream consumers. Toolkit scopes and instance identities cannot certify Argo A/B/A version switching. |
-| Scope and root isolation | `properties`: `property-<seed>-scope-isolation`; native `index`: `scope-isolates-same-key` and `reuse-rejects-different-scope`. Filesystem roots are a consumer policy, not an index namespace inferred by toolkit. |
-| Cancellation recovery | Native `index` exercises `query-mid-traversal-cancel-discards-items`; native `workspace` coordinates newer accepted input after obsolete work (`coordinator-late-worker-cannot-overwrite`). Full LSP cancellation/final cold equivalence remains downstream evidence. |
-| Repeated events | Native `index`: `repeated-begin-not-double-pending`; native `workspace`: `coordinator-pending-changes-coalesce`, `coordinator-old-notice-after-commit-safe`, and `coordinator-completed-input-not-recreated`. |
+## Maintain a public API or native dependency
 
-The table identifies ownership and existing checks; it does not upgrade narrower
-library assertions into unexecuted protocol or target-version acceptance.
+Update the implementation, its independent consumer expectations and the public
+contract together when behavior changes. Consumers retain byte-identical
+contract snapshots and implementation locks; a documentation edit to
+`CONTRACT.md` therefore requires deliberate compatibility handling. The
+contract ID and a module version identify different things.
 
-### One-time audit effectiveness evidence
+Preserve grammar provenance, license, patch and all required C includes/headers.
+Run the existing checkout, snapshot, vendor and delivery checks when those
+inputs or packaging rules change. A matching Go build alone does not prove that
+the published module or vendored consumer contains the same native inputs.
 
-Dispatch the existing native workflow with `audit_effectiveness=true` to run the
-three compiled fuzz mutants, five property faults, four actual downstream driver
-controls, and public schema type fault. This remains a full native workflow with
-all existing required jobs and ordinary cases; a failing effectiveness command
-fails its existing job. Ordinary PRs retain the full F5/F6 evidence controls but
-do not repeat these additional fault experiments.
+The two Argo plugins upgrade independently. Their actual pins are documented in
+[the consumer boundary table](docs/architecture.md#两个插件的实际引用与隔离).
+`tests/downstream-pins.json` separately selects immutable test consumers; those
+pins are test inputs, not the latest plugin versions. Candidate injection into
+an isolated downstream checkout does not update or publish either plugin.
 
-The extra artifacts are named `toolkit-fuzz-effectiveness`,
-`toolkit-property-effectiveness`, and `toolkit-downstream-effectiveness`, each
-suffixed with the run ID and attempt. They retain current-source identities,
-mutation inputs, real process output and named assertions. The public type fault
-must pass package-local `go test -count=1 ./...` and compile the pinned Argo CD consumer,
-then fail only the two designated version-specific `hoverType` assertions. All
-other pinned cases and assertions, including clean shutdown, must succeed with
-no execution or protocol errors. Package-local tests are explicitly
-not the external consumer suites. The normal and faulty consumers share the
-same T/A/W baseline tuple. Local entrypoints are `tests/fuzz_effectiveness.py`,
-`tests/property_effectiveness.py`, and `tests/downstream_effectiveness.py`;
-the last accepts `--baseline` and optional `--checkout-cache` paths. Use fresh
-output directories. Hosted artifacts from this dispatch are additional audit
-evidence, not a substitute for the ordinary PR workflow.
+## CI and publication
+
+`Toolkit required` validates the execution plan and reports from the same run
+attempt. A partial rerun that leaves producer evidence on an older attempt
+requires rerunning the complete workflow. The full plan and the exact prose-only
+PR allowlist are described in [the CI guide](tests/README.md#ci-执行与证据门禁).
+
+The publication job only runs after successful acceptance for a main push and
+checks that the same commit remains main. [VERSION](VERSION) selects the alpha
+tag and [RELEASE_NOTES.md](RELEASE_NOTES.md) supplies its notes. Existing releases
+remain unchanged; an existing tag without a release is rejected. To publish a
+new alpha, update the version and its release-specific notes intentionally, then
+allow the full main workflow to verify that commit.
+
+Keep current operating documentation and executable fixtures. Do not commit
+stage plans, audit snapshots, experiment transcripts or generated evidence under
+documentation; reports belong in the ignored `artifacts/` directory. Active
+machine contracts, including `docs/testing-ci-baseline.json`, remain required
+inputs and are explained in the [documentation index](docs/README.md).

@@ -1,125 +1,143 @@
 # 经验教训
 
-本文按问题记录已经发现的实现负担、已复现的依赖行为和被实际实验否决的方案。实验反例不代表线上事故；每项保留当前约束和仍可运行的回归入口。模块职责见[当前架构](architecture.md)，执行命令见[验证指南](../tests/README.md)。
+本文保留已发现问题对应的根因、当前防线和仍可运行的回归入口。故障注入或依赖行为复现不等于线上事故；测试中的工作量、分配和 RSS 阈值也不是任意工作区的耗时保证。模块职责见[当前架构](architecture.md)，运行方式见[验证指南](../tests/README.md)。
 
 ## 查询结果少，不代表查询工作量少
 
-**发生的问题。** 静态审查确认原 `SymbolsWithPrefix` 只限制结果 heap，低命中和零命中仍在一个读锁内检查整个 scope；外层请求的 context 不能打断这次内层扫描。Workflows 的展示符号还曾在 catalog 锁内复制并排序所有 URI。这里区分源码可确认的边界缺口与实际工作区的延迟，不能把未测量的用户规模描述为已复现耗时事故。
+**问题。** 只限制返回结果数量的 `SymbolsWithPrefix` 仍可能在一个读锁内遍历整个 scope；外层请求取消不能中断内层扫描。
 
-**当前处理。** 新 `SymbolsWithPrefixContext` 分开结果数量和文件/符号访问量，以既有 membership 链接保存位置，每批最多 128 次访问、锁外匹配和排序、可取消等锁。查询 scope generation 变化拒收结果，不相关 scope 变化不使查询重启；错误不交付部分 Items。旧 API 仍兼容，真实交互式效果取决于消费者是否迁移并去掉自己外层的长锁。
+**根因。** 结果容量、遍历工作量和持锁时间是不同限制，低命中或零命中也需要扫描文件与符号。
 
-**回归入口。** [`index_context.go`](../tests/consumer/index_context.go) 检查小预算、零匹配、pending 文件、取消、scope 变化与小预算下不复制全表；锁边界由 `go test -race ./index` 补充。`index-query-budget`、`index-query-files`、`index-query-scope` 消融分别移除预算、防漏计文件和返回前 generation 复核，必须编译成功并命中指定行为断言。高预算是兼容合法容量，不是性能改善的证据；锁持有期、可取消性和真实 LSP 的响应仍应分别验证。
+**修复。** `SymbolsWithPrefixContext` 分别限制结果和文件/符号访问量，每批最多 128 次访问；匹配和排序在锁外，等锁可取消，查询 scope generation 变化时拒绝结果。已有 entry 的 membership 链接支持游标，无需复制全部 URI；批间保留调度机会。旧 API 保持兼容，消费者需要显式迁移，并检查自身外层锁。
 
-**减法实验留下的边界。** 删除重复的 scope 指针栅栏，只保留不会回绕或复用的 generation；membership 直接借用已有 entry，去掉重复 URI 和逐符号 files-map 查询。两项等价替代均通过公开消费者与 race 检查，跨 scope pending、失败 Commit 后继续 pending、删除重建仍受保护。另两项“更短”的替代未采用：删除批间 `Gosched` 后功能仍通过，但 Linux/amd64、Go 1.27.3、单 P 的 1ms 定时取消在本地 100,000 符号实验中由约 1–2ms 延至 10–27ms，恢复后回落；将新旧查询合用 eager heap 后输出也正确，却使旧 API 的 100,000 结果查询每次多约 100,000 次分配、12.8MB 临时分配。当前保留批间调度机会，以及旧 API 的 lazy heap 和新 API 可取消的逐步排序。延迟数字只描述该实验，不是跨机器时限；测试通过不等于所有替代设计都值得采用。
+**防回归。** [`index_context.go`](../tests/consumer/index_context.go) 覆盖预算、零匹配、pending 文件、取消、scope 变化与小预算分配；`go test -race -count=1 ./index` 补充锁边界和 generation 不回绕检查。`index-query-budget`、`index-query-files`、`index-query-scope` 消融必须成功构建并命中指定行为断言。提高预算不能作为响应性改善的证据。
 
-## 1. 引用文件不应被迫声明人工 owner
+## 引用文件不应被迫声明人工 owner
 
-**发生的问题：API 设计负担。** 原先的符号父子树与引用 owner 要求，让只包含跨文件引用的 YAML 必须额外构造没有业务含义的声明。关联查询真正需要的是目标 key 和引用位置，人工 owner 增加了提取、校验及迁移代码。相关设计消融与实现见 [PR #1](https://github.com/lazysnail1024/k8s-crd-toolkit/pull/1)。
+**问题。** 要求每个引用都有声明 owner，会迫使仅包含跨文件引用的 YAML 构造没有业务含义的符号。
 
-**当前处理。** [`Facts`](../index/types.go) 使用平铺 symbol/reference；reference-only 文件直接可接纳。公共库保留文件内 symbol ID 和 scope/key，业务归属及调用图留在消费者。
+**根因。** 公共索引将业务父子关系与目标 key、引用位置混在一起，增加了提取和迁移负担。
 
-**回归入口。** [`relations.go`](../tests/consumer/relations.go) 的 `referenceOnlyCases` 使用 Application/Workflow fixture 检查无人工声明时的引用、目标到达/移除与导航位置。这些 fixture 不能扩展解释为全部 Argo 语义或任意损坏 YAML 都受支持。
+**修复。** [`Facts`](../index/types.go) 使用平铺 symbol/reference，接受 reference-only 文件；保留文件内 symbol ID 和 scope/key，业务归属及调用图留在消费者。
 
-## 2. 抽出函数后，生命周期状态仍可能在三处重复
+**防回归。** [`relations.go`](../tests/consumer/relations.go) 的 reference-only 用例检查无人工声明时的引用、目标到达/移除与导航位置。Argo fixture 只证明消费者能在公共机制上表达这些事实，不证明全部 Argo 语义。
 
-**发生的问题：两插件接入后的重复所有权。** 公共 Queue 只负责 pending，消费者仍分别保留 running、overflow、扫描轮次、打开文本字节计数和为重用而保存的公共 facts。代码搬进依赖库并没有自动消除这些状态。共享生命周期改造见 [PR #2](https://github.com/lazysnail1024/k8s-crd-toolkit/pull/2)。
+## 抽出函数后，生命周期状态仍可能重复
 
-**当前处理。** `WorkQueue` 管理执行预约及后续通知；`Membership` 只管理轮次，使用消费者现有文件表上的 observation；`Documents.OpenBytes` 返回权威账目；`Index.Reuse` 使用内部保留的同 scope 摘要。两插件分别在 [incremental.go](https://github.com/lazysnail1024/zed-argocd/blob/main/internal/lsp/incremental.go) 与 [catalog.go](https://github.com/lazysnail1024/zed-argo-workflows/blob/main/internal/lsp/catalog.go) 组合这些机制，继续拥有业务状态与配置。
+**问题。** 只有 pending Queue 时，两个插件仍各自保存 running、overflow、扫描轮次、打开文本字节数和为复用保留的公共 facts。
 
-**回归入口。** [`workqueue.go`](../tests/consumer/workqueue.go) 检查小 ready 容量的公平性、运行期间再次通知、删除后重建、旧 worker 完成和扫描对账；[`reuse.go`](../tests/consumer/reuse.go) 检查同 scope、原 ticket、保留依赖和不重复复制摘要；[`workspace.go`](../tests/consumer/workspace.go) 检查接受、拒绝、关闭后的 OpenBytes。`tests/ablate.py` 中相应反例必须成功编译并命中指定失败断言。
+**根因。** 抽取同名函数没有明确状态的唯一所有者，消费者仍承担相同的生命周期账目。
 
-**保留下来的原则。** 按状态所有权消除重复，比仅按同名函数抽取更有效；输入、分析和执行三种票据承担不同责任，不能合成一个万能 generation。
+**修复。** `WorkQueue` 管理执行预约及后续通知，`Membership` 只管理扫描轮次并借用消费者文件表的 observation，`Documents.OpenBytes` 提供打开输入账目，`Index.Reuse` 使用内部同 scope 摘要。消费者继续拥有业务状态及跨模块同步；读入、分析、执行票据不能互相替代。
 
-## 3. 代码更短仍可能破坏资源上界或当前目录响应
+**防回归。** [`workqueue.go`](../tests/consumer/workqueue.go) 检查公平性、运行期间通知、删除重建和旧 worker 完成；[`reuse.go`](../tests/consumer/reuse.go) 检查同 scope、原票据和不重复复制；[`workspace.go`](../tests/consumer/workspace.go) 检查接受、拒绝、关闭后的 OpenBytes。
 
-**发生的问题：实际消融中的反例。** [PR #1](https://github.com/lazysnail1024/k8s-crd-toolkit/pull/1) 的 collect-all-sort-truncate 能返回正确符号，却使小 `limit` 查询的临时分配随全部命中增长；单 Scanner 游标能完整且不重复地枚举目录，却使新优先目录被大后台目录阻塞；单 slice Queue 的功能用例通过，但线性查找使大量入队退化。这些是被否决的替代实现，并非当前算法的已知故障。
+## 代码更短仍可能破坏资源上界或当前目录响应
 
-**当前处理。** [`query.go`](../index/query.go) 保留有界 heap；[`scanner.go`](../workspace/scanner.go) 保留 active 与至多一个 paused 游标；[`queue.go`](../workspace/queue.go) 保留 map 查找和分队列链表。已完成目录从 `seen` 中保留身份但释放工作对象，使“去重需要记住目录”不变成“永久持有目录游标”。
+**问题。** collect-all-sort-truncate 可以返回正确符号，却使小 limit 查询的临时分配随全部命中增长；单 Scanner 游标能完整枚举目录，却会让当前目录等待大后台目录。
 
-**回归入口。** [`index.go`](../tests/consumer/index.go) 的符号查询用例测小 limit 下的分配并检查确定排序；[`workspace.go`](../tests/consumer/workspace.go) 在后台扫描已推进后再提升目录，检查后续批次及时返回候选、最终完整且不重复，以及完成目录不重新入队；[`coordination.go`](../tests/consumer/coordination.go) 检查通知到执行的输入所有权。
+**根因。** 结果正确性无法单独证明分配有界、队列操作复杂度或发现优先级。去重身份与仍需执行的工作对象也有不同生命周期。
 
-**证据边界。** 这些回归覆盖输出、分配和工作量约束；单 slice Queue 的性能结论来自上述实验，现行语义测试不能独自重新证明它。工作量界限也不等于 OS 调用的毫秒时限。
+**修复。** [`query.go`](../index/query.go) 保留有界 heap；[`scanner.go`](../workspace/scanner.go) 保留 active 与至多一个 paused 游标；[`queue.go`](../workspace/queue.go) 使用 map 和分队列链表。完成目录保留去重身份，释放不再需要的工作对象。新旧查询分别保留适合其取消与分配约束的处理方式。
 
-## 4. 原生对象关闭了，Go 上下文仍可能被回调句柄保留
+**防回归。** [`index.go`](../tests/consumer/index.go) 检查小 limit 分配和确定排序；[`workspace.go`](../tests/consumer/workspace.go) 在后台扫描推进后提升目录，检查有界批次内得到候选及最终不漏不重；[`coordination.go`](../tests/consumer/coordination.go) 检查通知到执行的输入所有权。工作量界限不等于 OS 调用的毫秒时限。
 
-**发生的问题：可复现的依赖生命周期行为。** 当前所用 go-tree-sitter v0.25.0 的 progress-options 句柄会保留捕获调用 context 的回调；仅关闭 parser/tree 不足以消除该持有链。桥接源码的注释和 [`retention` 反例](../tests/ablate.py)保留了可复现入口。
+## 原生对象关闭后，回调句柄仍可能保留 context
 
-**当前处理。** [`parser.go`](../yamlview/internal/parser/parser.go) 使用没有 progress options 的 `Parse`，依靠原生时间片恢复解析，在时间片之间检查取消；parser/tree 均在调用内关闭。输出为复制出的 Go 节点，不暴露原生句柄。
+**问题。** 当前 go-tree-sitter v0.25.0 的 progress-options 路径会保留捕获调用 context 的回调；只关闭 parser/tree 不足以释放该持有链。
 
-**回归入口。** [`retention.go`](../tests/consumer/retention.go) 分别覆盖成功、深度错误和取消路径的 context 释放；[`resume.go`](../tests/consumer/resume.go) 检查分片恢复不丢输入与取消；`resources` 阶段检查原生 RSS。Go heap 指标不能替代原生 RSS，而实验阈值也不构成无任何泄漏的证明。
+**根因。** 原生对象与 Go 回调句柄的生命周期并不相同，输入 context 不能留在未释放的依赖回调中。
 
-## 5. YAML scanner 的固定序列化缓冲区必须逐次检查写入
+**修复。** [`parser.go`](../yamlview/internal/parser/parser.go) 使用没有 progress options 的 `Parse`，依靠原生时间片恢复同一次解析并检查取消。两个固定 OS 线程 worker 只执行原生片段；每个调用独占 parser/输入，成功后调用方复制节点并关闭 tree，错误/取消先清理再返回。空闲 worker 不保留上一调用。
 
-**发生的问题：可复现的原生越界。** vendored 上游 scanner 的检查只验证当前偏移小于 1,024，偏移为 1,022 时仍可写入 4 字节并返回 1,026，触发 Tree-sitter 断言。简单截断缩进栈又会损坏支持范围内的深层 YAML。原因和对应补丁保存在随源码交付的 [grammar 说明](../yamlview/internal/parser/grammar/README.md)。
+**防回归。** [`retention.go`](../tests/consumer/retention.go) 检查成功、深度错误和取消路径的 context 释放；[`resume.go`](../tests/consumer/resume.go) 检查分片恢复与取消；`retention` 消融恢复有问题的依赖路径，`resources` 检查真实 RSS。Go heap 指标不能替代原生 RSS。
 
-**当前处理。** 本地补丁以 LEB128 编码完整状态并在每次写入前校验缓冲区；超过预算返回显式错误。Go 桥接在锁定 OS 线程期间读取线程局部预算标志，语义深度限制仍在解析后检查。补丁没有靠丢弃栈帧假装解析成功。
+## Scanner 的固定缓冲区必须逐次检查写入
 
-**回归入口。** [`budget.go`](../tests/consumer/budget.go) 覆盖支持的 256 层、宽缩进、scalar、超限后恢复及并发；[`ablate.py`](../tests/ablate.py) 的 `budget` 反例验证不能通过降低支持深度来绕过问题。
+**问题。** 上游 scanner 在序列化偏移 1,022 时仍可写入 4 字节并返回 1,026，超过 1,024 字节 ABI 缓冲区，触发 Tree-sitter 断言。
 
-## 6. 短字符串摘要也能意外保留整份输入
+**根因。** 循环只检查当前偏移，未核对下一次完整写入的容量；直接截断缩进栈又会损坏支持范围内的深层 YAML。
 
-**发生的问题：已复现的存储反例。** 从大字符串切出的符号名字即使只剩几个字节，仍可能共享整份输入的底层存储。删除克隆步骤的 buildable variant 会在专门保留测试中失败；这不等同于已观察到用户生产环境 OOM。
+**修复。** [本地 grammar 补丁](../yamlview/internal/parser/grammar/README.md) 用 LEB128 编码完整状态，每次写入前校验容量，超限返回明确错误。线程局部预算标志在固定线程上的每片解析内重置、读取；解析后的语义深度仍限制为 256。
 
-**当前处理。** [`Index.Begin`](../index/index.go) 分离 URI/scope 字符串；`Commit` 通过 [`cloneFacts`](../index/facts.go) 分离事实字符串并复制可变容器。`Reuse` 恢复已分离的内部 facts，避免消费者或索引再次复制同一摘要。YAML View 的 `Raw` 仍允许共享输入，调用方应在摘要提取后释放 View；不能由索引的保证推导出业务缓存也没有全文引用。
+**防回归。** [`budget.go`](../tests/consumer/budget.go) 覆盖 256 层、宽缩进、scalar、超限后恢复及并发；`budget` 消融必须命中指定深度断言，不能以降低支持深度来绕过错误。
 
-**回归入口。** [`index.go`](../tests/consumer/index.go) 的摘要存储测试用来自独立大字符串的小名字检查持有量，`index-retention` 反例移除名字克隆后必须命中指定断言；[`reuse.go`](../tests/consumer/reuse.go) 检查重复重用的分配。
+## 短字符串摘要也能保留整份输入
 
-## 7. 本机能构建不足以证明消费者得到同一份源码
+**问题。** 从大字符串切出的短符号名仍可能持有整份输入的底层存储，摘要尺寸看起来很小却无法释放源文本。
 
-**发生的问题：交付验证中出现的边界差异。** Git 换行转换、ZIP creator 默认值、平台路径排序及 deflate 实现都能让相同逻辑源码产生不同内容字节；标准 `go mod vendor` 又不会自动保留全部原生头文件和被 include 的实现目录。相关可复现用例见 [`checkout_e2e.py`](../tests/checkout_e2e.py)、[`snapshot_e2e.py`](../tests/snapshot_e2e.py) 和 [`vendor_e2e.py`](../tests/vendor_e2e.py)。
+**根因。** Go 字符串切片共享存储，复制结构体或 slice 不会自动分离其字符串数据。
 
-**当前处理。** checkout 使用仓库 LF 策略；[`snapshot.py`](../tools/snapshot.py) 按相对 POSIX 路径排序、固定 Unix ZIP 元数据并采用不压缩存储，拒绝覆盖同版本不同字节。vendored 消费者显式补齐 grammar 头文件及 go-tree-sitter 的 `include`/`src`，连同来源和许可证校验。两个插件锁定源码提交、Go sums 和合同摘要，不依赖可移动分支来表示实现版本。
+**修复。** [`Index.Begin`](../index/index.go) 分离 URI/scope，`Commit` 通过 [`cloneFacts`](../index/facts.go) 分离字符串并复制可变容器；`Reuse` 复用已经分离的内部 facts。YAML View 的 `Raw` 仍允许共享输入，业务摘要要独立检查所有权并及时释放 View。
 
-**回归入口。** [`native.py`](../tests/native.py) 从独立模块、无 replace 的源码快照运行公共消费者；[`delivery.py`](../tests/delivery.py) 用全新 module cache 与仅文件代理验证离线交付；[`native_delivery_e2e.py`](../tests/native_delivery_e2e.py) 和 [`delivery_failures_e2e.py`](../tests/delivery_failures_e2e.py) 检查空套件、错误平台、缺失编译器、损坏报告和超时不能沿用成功结果。原生 CI 定义见 [native.yml](../.github/workflows/native.yml)。
+**防回归。** [`index.go`](../tests/consumer/index.go) 使用独立大字符串的小名字检查持有量，`index-retention` 消融移除克隆后须命中指定断言；[`reuse.go`](../tests/consumer/reuse.go) 检查重复复用分配。公共索引的保证不扩展到消费者自己的缓存。
 
-**证据边界。** 这些测试证明本次输入和运行条件下的公共库交付行为。模拟 Windows ZIP 环境不等于原生 Windows 验收，公共消费者通过也不等于真实 Zed 启动和所有业务跳转通过；相应结论由消费者的原生运行、LSP 和编辑器证据支持。
+## 本机构建不证明交付的是同一份源码
 
-## 8. 能解析 YAML 不等于能独立修改投影来源
+**问题。** 换行转换、ZIP 元数据、排序与压缩实现会改变包装字节；标准 `go mod vendor` 又不自动包含全部 native headers 和 include 实现。
 
-**发生的问题。** 两个插件各自维护 alias/merge 值和来源规则，迁移时还发现 Workflow 的局部修复尝试与完整范围回退共用逻辑结果预算，导致大 alias fixture 的合法修复被误拒绝。问题由真实应用修复后的诊断检查复现，不能靠增大配额掩盖。
+**根因。** 编译成功只说明当前环境找到所需输入，不能说明模块包装、原始 Git 字节和消费者实际编译输入一致。
 
-**当前处理。** 公共 `yamlvalue` 统一值与 exact/derived/ambiguous 来源；消费者保留各自 tag 政策及整个请求的预算。每次 before/after 分析和回退获得独立且明确的预算上下文，不继承前一条失败路径的消耗。共享 anchor、alias 使用点和 merge 来源不作为独立标量编辑。
+**修复。** checkout 使用 LF 策略；[`snapshot.py`](../tools/snapshot.py) 固定 Unix ZIP 元数据、POSIX 路径排序及不压缩存储，拒绝同版本异字节。vendored 消费者显式恢复 C 头文件、实现、来源及许可，并锁定提交、sums、合同和文件清单。
 
-**回归入口。** 公共 `yamlvalue` 消费者与 `yamlvalue-origin` 可编译反例覆盖来源；两个插件各自 CLI/LSP fixture 校验真实诊断、位置和修复，Workflow 的 `wf-semantic-origin-budget.py` 覆盖大投影与局部修复。
+**防回归。** [`checkout_e2e.py`](../tests/checkout_e2e.py)、[`snapshot_e2e.py`](../tests/snapshot_e2e.py)、[`vendor_e2e.py`](../tests/vendor_e2e.py) 检查上述边界；[`native.py`](../tests/native.py) 验证原生独立 module，[`delivery.py`](../tests/delivery.py) 验证空缓存、仅文件代理和无 replace 的消费。模拟 ZIP 环境不等于原生 Windows，公共消费者也不等于真实 Zed。
 
-## 9. Schema 查询必须复用正在校验的编译图
+## 有效值不等于可独立编辑的原文
 
-**发生的问题。** Argo CD 的默认 auto 版本在已能报告 enum 错误时，修复查询仍从原始 Schema 结构寻找候选，无法得到等价的可用枚举修复。独立维护 raw-schema 遍历与校验编译图还容易在组合分支和候选接受规则上分歧。
+**问题。** alias/merge 展开后的值可以正确，但其来源未必能独立修改；Workflow 局部修复与完整回退共用预算还会误拒绝大 alias 输入的合法修复。
 
-**当前处理。** 两个消费者都用公共 `schemaquery` 查询原有 compiled schema；候选继续经原 validator 验证。删去没有真实调用方的额外公共 Accepts 接口，未引入 Schema registry、compiler cache 或业务 provider。未知分支和预算失败显式返回，不把空候选当完整证明。
+**根因。** 有效值、独立来源、共享 anchor 和每次验证的工作预算承担不同责任。
 
-**回归入口。** 公共非 Argo Schema 消费者和 `schemaquery-validation` 反例；CD 的 auto/精确版本 codeAction → resolve → 应用 → 诊断清除真实链路。移除候选验证必须在编译成功后被行为断言检出。
+**修复。** 公共 `yamlvalue` 表达 exact/derived/ambiguous 来源；插件保留 tag 政策和请求总预算。before/after 分析及回退分别获得独立预算，共享 anchor、alias 使用点和 merge 来源不直接当作独立标量编辑。
 
-## 10. 先截断再筛选会漏掉相关资源
+**防回归。** 公共 `yamlvalue` consumer 与 `yamlvalue-origin` 消融覆盖来源；两个插件通过真实 CLI/LSP 验证位置和修改效果，Workflows 的 `wf-semantic-origin-budget.py` 检查大投影及局部修复。
 
-**发生的问题。** 全域候选超过 1000 时，如果先取 1000 项再按 kind/namespace 筛选，排在后面的相关模板或项目不会出现，即使相关集合本身很小。
+## Schema 查询必须复用正在校验的编译图
 
-**当前处理。** `SymbolsWithPrefix` 在同一有界查询内先按消费者编码的 key 前缀筛选，再应用结果上限。不在索引锁内运行消费者回调；超限仍返回 Truncated，插件不能把它当完整编辑范围。
+**问题。** Argo CD 已能报告 enum 错误时，从另一份 raw Schema 遍历得到的修复查询仍可能没有可用候选。
 
-**回归入口。** `index_prefix.go` 的 1001 个不相关资源反例与 `index-prefix` 消融；Workflow 的真实 LSP 用例同时覆盖相关候选可见和相关候选自身超限后的修复拒绝。
+**根因。** 独立 raw-schema 遍历会与编译 validator 在引用、组合分支及候选接受规则上分歧。
 
-## 11. 原文范围正确，不代表重复解码成本合理
+**修复。** `schemaquery` 查询调用方原有 compiled schema，候选仍经原 validator 验证；未知分支和预算失败明确返回。公共包不引入 Schema registry、compiler cache 或业务 provider。
 
-**发生的问题。** Workflow 的原 128 MiB 输入边界验收中，小资源后附的大段 ASCII 注释反复进入 schema 与外部引用分析的严格投影，触发原有 5 秒期限。CPU profile 显示主要成本在 yaml.v3 和 YAML-to-JSON 解码器的注释扫描。`Document.Span` 与 mapping 根的范围都可能覆盖尾注释，不能假设根范围更短，也不能用最后一个值节点的位置截断整个文档。
+**防回归。** 公共非 Argo Schema consumer 与 `schemaquery-validation` 消融检查候选验证；CD 验证 auto/精确版本的 codeAction → resolve → 应用 → 诊断清除。删除候选验证必须在构建成功后被行为断言检出。
 
-**当前处理。** `yamlview` 根据现有 CST 中的真实 comment 节点建立保守 `ContentSpan`，`yamlvalue.Project` 在完整原文匹配后仅缩短解码输入。原文本、位置、块标量内容、输入字节配额和来源证明全部保留；无需在插件增加 decoder、绕过路径或投影缓存。
+## 先截断再筛选会漏掉相关资源
 
-**已验证的边界。** 审阅复现了 CST 把 NEL/LS/PS 后的字段包含在 comment 内、但严格 YAML 解码器仍把它解释为字段的差异；非法控制字符也可能被 CST 接受，却必须由严格解码器拒绝。因此只省略 ASCII 可打印字符注释；非 ASCII 一律保留原路径。可编译消融还发现，注释之间带 TAB 的空行会被 YAML-to-JSON 解码器拒绝，不能作为普通空白删除。含任意 TAB 的文档都保留完整范围，不再复制一套缩进语法来猜测哪些 TAB 可以删除。普通字符串删尾、正则删 `#`、删尾空白或按叶节点结束位置裁剪均不能提供这个证明。
+**问题。** 全域候选超过结果上限时，先截断再按 kind/namespace 筛选会漏掉后面的相关模板或项目。
 
-**回归入口。** [`yamlvalue_comments.go`](../tests/consumer/yamlvalue_comments.go) 校验 literal/folded chomping、字面 `#`、flow 闭括号、null、tag、merge、显式文档边界、CRLF、多文档位置、Unicode 换行、非法字符和完整原文错配。5 MiB 尾注释快照先完成 CST 解析，再单独测 Project 分配；`yamlvalue-comment-input` 可编译消融恢复全范围解码，必须命中分配断言；`yamlvalue-comment-characters` 移除字符防线，必须命中真实 Unicode 字段丢失断言；`yamlvalue-comment-tabs` 移除全篇 TAB 检查，必须命中原始 TAB 输入拒绝断言。资源阈值属于验证条件，不构成任意工作区的耗时保证；整个请求的原期限仍由真实消费者验收。
+**根因。** 结果上限被错误地应用在业务筛选之前，与真正需要的候选集合不一致。
 
-## 12. 子进程失败，不等于测试检出了故障
+**修复。** `SymbolsWithPrefix` 在有界查询内先按消费者编码的 key 前缀筛选，再应用结果上限；交互式调用可使用对应 Context API。超限返回 Truncated，不能将其作为完整编辑闭包。
 
-**发生的问题。** 消融脚本曾不检查子进程的本轮报告来源。保留一个旧的 `revision: false` 报告后，把 `GO` 指向不存在的文件，消费者完全没有构建，外层消融仍返回成功。普通消费者 runner 也曾只检查退出码；空对象、字符串 `"false"` 等内容没有独立判定。同名 fixture 检查直接赋值还可能让后续成功覆盖先前失败。
+**防回归。** [`index_prefix.go`](../tests/consumer/index_prefix.go) 的 1,001 个不相关资源与 `index-prefix` 消融检查相关候选仍可见；Workflow LSP 另验证相关集合自身超限时拒绝不完整修复。
 
-**当前处理。** 每轮先写失败态收据，消融使用独立目标及输出目录；基线通过、指定断言为真是变体执行的前提。变体必须成功编译、执行退出 1、解析出真实 boolean 断言，并使指定项变为假。缺工具、编译失败、超时、崩溃和无关失败不能替代该证据。所有消费者入口使用同一严格 JSON 合同；同名检查按逻辑与累积。
+## 原文范围正确，不代表重复解码成本合理
 
-**回归入口。** [`runner_effectiveness_e2e.py`](../tests/runner_effectiveness_e2e.py) 以单条件变化的受控子进程验证上述判定，不把协议夹具计为产品行为测试。平台/编译器负例还检查具体失败阶段。完整源码交付、vendor、checkout 及这些负控制现在由独立 Linux CI job 执行，并作为发布依赖；五平台真实公共消费者仍全部保留。
+**问题。** 大段尾部 ASCII 注释反复进入严格投影，会让语义很小的资源花费大量重复解码工作；单靠根节点范围裁剪又可能删掉真实内容。
 
-## 13. 修改 native include 后，缓存可能仍执行原实现
+**根因。** `Document.Span` 和 mapping 根范围可能覆盖尾注释，CST 与严格 YAML 解码器对 Unicode 换行、TAB 和非法字符的分类也不完全一致。
 
-**发生的问题。** 开启临时路径消除与 Go 编译缓存后，仅改变 `scanner.c.inc` 的 `budget` 消融曾继续通过全部深度断言。在同一缓存中，给 CGO preamble 加一条无语义注释强制重编译，相同变体立即使 `mapping-256-complete`、`sequence-256-complete`、`wide-depth-256` 失败。这证明问题是未感知 include 输入的构建复用，而非放宽深度断言能解决的测试波动。
+**修复。** `ContentSpan` 只省略已确认的 ASCII 可打印 comment 节点及允许的间隙；含 TAB 的文档走完整范围，非 ASCII/非法控制字节交严格解码器处理。投影先核对完整原文，原位置、scalar 内容、来源及输入字节计费不变。
 
-**当前处理。** replace 消费者 runner 计算原生 `.inc`/`.h`/`.c` 摘要，追加到实际有效 `CGO_CFLAGS`；保留工具链默认优化标志。CI 缓存也纳入 `.inc`/`.h` 内容。不可变 module 消费入口原本按全部运行源码摘要生成版本，已在同一缓存中验证只改 include 会得到新版本并拒绝该变体，无需改变它的编译条件。
+**防回归。** [`yamlvalue_comments.go`](../tests/consumer/yamlvalue_comments.go) 检查块标量、flow、tag/merge、边界、CRLF、Unicode 换行、非法字符和原文错配。`yamlvalue-comment-input`、`yamlvalue-comment-characters`、`yamlvalue-comment-tabs` 分别检测重复大注释解码分配、真实字段丢失和被错误接受的 TAB 输入；整个请求期限仍由真实消费者验证。
 
-**回归入口。** `python3 tests/ablate.py budget` 在同一缓存中依次构建通过的基线及仅改变 `.inc` 的变体，后者必须由指定深度行为检出。完整 CI 默认运行全部消融，避免原生资源、scanner budget 和 source/edit 防线留在注册表中却没有执行。
+## 子进程失败，不等于测试检出了故障
+
+**问题。** 消融曾在消费者缺工具、未构建时沿用旧失败报告返回成功；只看退出码又会接受空输出或字符串 boolean，重复检查还可能覆盖先前失败。
+
+**根因。** 报告没有绑定本轮输入和阶段，判定器未独立校验输出类型、必需断言及指定失败原因。
+
+**修复。** 先写失败态收据，使用独立目标及输出目录；基线成功后才运行变体。检出必须同时具备成功构建、真实执行、指定 boolean 断言失败和本轮来源；检查结果按逻辑与累积。CI 进一步绑定 SHA、run、attempt、lane/platform 和实际断言清单。
+
+**防回归。** [`runner_effectiveness_e2e.py`](../tests/runner_effectiveness_e2e.py) 检查协议判定；[`native_delivery_e2e.py`](../tests/native_delivery_e2e.py) 与 [`delivery_failures_e2e.py`](../tests/delivery_failures_e2e.py) 验证平台、工具、报告及超时的具体失败路径。`evidence_semantics_e2e.py` 以真实 fuzz/downstream 输出检查完整证据链，协议夹具不冒充产品测试。
+
+## 修改 native include 后，缓存仍可能复用原实现
+
+**问题。** 只修改 `scanner.c.inc` 的可编译故障曾仍通过基线深度断言，强制改变 CGO 编译输入后相同故障才被检出。
+
+**根因。** Go 的 CGO 构建缓存不自动追踪任意 `#include` 的 `.inc` 字节，缓存身份未覆盖实际原生实现。
+
+**修复。** replace consumer 对 `.inc`/`.h`/`.c` 计算摘要并追加到有效 `CGO_CFLAGS`，保留工具链默认优化标志；CI cache 也包含 native includes。不可变 module consumer 用全部运行输入摘要产生新 module 身份。
+
+**防回归。** `python3 tests/ablate.py budget` 在同一缓存中构建正常基线和 include 变体，后者必须命中指定深度失败。完整 CI 默认运行全部注册 ablation，不能因为缓存命中跳过对应行为。
