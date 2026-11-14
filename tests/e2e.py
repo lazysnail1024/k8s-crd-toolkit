@@ -14,6 +14,8 @@ import zipfile
 
 from assertions import parse_assertions
 
+import os
+CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 root = pathlib.Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
 parser.add_argument('stage')
@@ -28,7 +30,7 @@ run_id = str(time.time_ns())
 env = os.environ.copy()
 env.update(GOWORK='off', CGO_ENABLED='1')
 go = env.get('GO') or (env['GOROOT'] + '/bin/go' if env.get('GOROOT') else shutil.which('go'))
-report = dict(runID=run_id, stage=args.stage, target=str(target), replay=sys.argv,
+report = dict(schemaVersion=1,executionIdentity=CI_IDENTITY,runID=run_id, stage=args.stage, target=str(target), replay=sys.argv,
               steps=[], assertions={}, passed=False,
               environment={k: env.get(k) for k in
                            ['GO', 'GOROOT', 'GOMODCACHE', 'GOCACHE', 'GOWORK',

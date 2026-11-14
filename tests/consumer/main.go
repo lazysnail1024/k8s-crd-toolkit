@@ -18,7 +18,9 @@ func check(name string, ok bool) {
 }
 func main() {
 	stage := os.Args[1]
-	if stage == "source" {
+	if stage == "properties" {
+		propertyCases()
+	} else if stage == "source" {
 		sourceCases()
 	} else if stage == "edit" {
 		editCases()
@@ -63,7 +65,7 @@ func snap(t string) source.Snapshot {
 	return s
 }
 func sourceCases() {
-	s := snap("\ufeff\u4e2d😀\r\nx\ny")
+	s := snap("\ufeff\u4e2d\U0001f600\r\nx\ny")
 	for _, c := range []struct {
 		b int
 		p source.Position

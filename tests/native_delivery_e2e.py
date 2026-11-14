@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Exercise native delivery and deliberate failures in isolated source copies."""
 import argparse,hashlib,json,os,pathlib,shutil,subprocess,sys,tempfile,time,traceback
+import os
+CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 root=pathlib.Path(__file__).resolve().parents[1]
 out=root/'artifacts/native-delivery';out.mkdir(parents=True,exist_ok=True)
 variants=['isolated-source','empty-suite','rss-failure','wrong-platform','missing-compiler']
 p=argparse.ArgumentParser();p.add_argument('--variant',action='append',choices=variants);p.add_argument('--timeout',type=float,default=300);args=p.parse_args()
-run_id=str(time.time_ns());rows=[];report={'runID':run_id,'replay':sys.argv,'cases':rows,'passed':False}
+run_id=str(time.time_ns());rows=[];report={'schemaVersion':1,'executionIdentity':CI_IDENTITY,'runID':run_id,'replay':sys.argv,'cases':rows,'passed':False}
 # Preserve any previous report before replacing it, including failures before a case starts.
 if (out/'report.json').exists():shutil.copyfile(out/'report.json',out/('report-previous-'+run_id+'.json'))
 def save():

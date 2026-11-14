@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "consumers": {
+    "zed-argocd": {
+      "repository": "https://github.com/lazysnail1024/zed-argocd.git",
+      "commit": "38c9efe89c618b0015d8e57426cea93dc6d12da7",
+      "command": "argocd-ls",
+      "suites": ["tests/publication_e2e.py", "tests/alias_projection_lsp_e2e.py"]
+    },
+    "zed-argo-workflows": {
+      "repository": "https://github.com/lazysnail1024/zed-argo-workflows.git",
+      "commit": "6784a9eff060390ab0c13d02c25ad364441fd27c",
+      "command": "argo-workflows-ls",
+      "suites": ["tests/e2e/wf-local-rename.py", "tests/e2e/wf-shared-yaml-projection.py"]
+    }
+  }
+}
