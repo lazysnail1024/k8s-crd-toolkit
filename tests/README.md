@@ -6,7 +6,7 @@
 
 需要 Go 1.27.3、Python 3、本机 C 编译器和可写 Go cache。设置 `GOWORK=off`、`CGO_ENABLED=1`；`GO` 可选择 Go 可执行文件，显式 `GOROOT` 必须与它匹配，`CC` 选择编译器。
 
-GitHub CI 在 PR 和推送 `main` 时使用原生五平台矩阵、Go 1.27.3、Python 3.14.x；`setup-go` 按平台、Go 版本、`go.sum`、实际 C 编译器版本、runner image 和原生 `.inc`/`.h` 内容缓存 Go 模块及编译产物。编译器指纹位于 checkout 内的 `artifacts/cache/compiler.txt`。`go test -race -count=1 ./index` 禁用成功测试结果缓存；所有公共消费者和消融仍实际执行。**测试入口、失败条件、证据留存不随编译缓存命中变化**。主分支上只有矩阵、Linux 回归及源码交付验证全部成功，且仍是当前 `main` 提交时，才会尝试发布 `VERSION` 的 alpha tag。发布使用[当前发行说明](../RELEASE_NOTES.md)，不会重写已存在的 tag/release。
+完整 CI 计划使用五平台原生矩阵和 `go.mod` 指定的 Go；consumer、index_regression、delivery_regression 显式安装 Python 3.14，其余 job 使用 runner 提供的 Python。上述三个 job 的 `setup-go` cache 按平台、Go 版本、`go.sum`、实际 C 编译器版本、runner image 和原生 `.inc`/`.h` 输入区分；编译器指纹位于 `artifacts/cache/compiler.txt`。`go test -race -count=1 ./index` 禁用成功测试结果缓存，公共消费者和已选中的消融每次仍实际执行。执行选择、完整 job 清单和发布条件见下文 [CI 门禁](#ci-执行与证据门禁)。
 
 ```sh
 python3 tests/native.py --expected-platform linux/amd64
@@ -64,9 +64,9 @@ python3 tests/ablate.py workspace-workqueue-fairness workspace-workqueue-followu
 python3 tests/ablate.py resources retention
 ```
 
-[`ablate.py`](ablate.py) 先为每个受影响的套件运行一次未修改基线，要求指定断言为真，再在隔离源码副本中只改变一项防线。每个变体必须重新完成构建、正常执行消费者并使指定断言变为假；崩溃、编译错误、超时、空输出、无关断言失败或不存在的旧报告均不算检出。每次使用独立输出目录，报告绑定实际目标目录。未知或重复 variant 直接失败；默认运行 `variants` 注册表中的全部 33 项，CI 不另行维护容易遗漏的部分名称清单。
+[`ablate.py`](ablate.py) 先为每个受影响的套件运行一次未修改基线，要求指定断言为真，再在隔离源码副本中只改变一项防线。每个变体必须重新完成构建、正常执行消费者并使指定断言变为假；崩溃、编译错误、超时、空输出、无关断言失败或不存在的旧报告均不算检出。每次使用独立输出目录，报告绑定实际目标目录。未知或重复 variant 直接失败；默认运行 `variants` 注册表中的全部变体，CI 不另行维护部分名称清单；指定的故障断言由机器验收合同独立核对。
 
-这种验证证明测试能识别指定错误，不自动证明某个更简单的完整设计不可行。已有完整设计替代实验留下的规则见[经验教训](../docs/lessons-learned.md#3-代码更短仍可能破坏资源上界或当前目录响应)。
+这种验证证明测试能识别指定错误，不自动证明某个更简单的完整设计不可行。已有完整设计替代实验留下的规则见[经验教训](../docs/lessons-learned.md#代码更短仍可能破坏资源上界或当前目录响应)。
 
 ## Checkout、源码快照与 vendor
 
@@ -97,39 +97,104 @@ delivery 先在临时种子模块中用仓库的 `go.mod`/`go.sum` 下载完整�
 
 `native_delivery_e2e.py` 在 Linux 检查隔离源码、空套件、RSS 中间采样失败、平台不符及缺失编译器；`delivery_failures_e2e.py` 检查缺失工具、损坏子报告和超时不能复用旧成功报告，也验证移除 RSS 全样本检查后能检出该反例。
 
-## 有效性审计与正交覆盖
+## 状态关系、确定性种子与 mutation fuzz
 
-验收分成互补的维度；不把每个交付故障再乘以全部平台，也不把功能正确、取消、资源上界合并成一个“命令返回成功”。已有业务断言及资源阈值全部保留。
+```sh
+python3 tests/e2e.py properties
+python3 tests/fuzz_seeds.py --platform linux/amd64
+python3 tests/fuzz.py --seconds 60
+```
 
-| 测试家族与持久入口 | 独立判定依据 | CI 执行位置与边界 |
-|---|---|---|
-| `source`、`edit`：`consumer/main.go` | 固定坐标与编辑后原文字节；非法 revision、重叠、原文不符各自隔离 | 五个平台正常消费；Linux `source`/`edit` 消融 |
-| YAML：`yaml.go`、`audit.go`、`budget.go`、`resume.go` | 固定文档/节点/位置；256/257 深度、文档/字节上限；取消与恢复 | 五个平台正常消费；Linux bytes/depth/scanner-budget 消融 |
-| 投影/查询：`yamlvalue*.go`、`schemaquery.go` | 固定 JSON 值、来源范围、独立 schema 候选；预算失败不冒充空成功 | 五个平台正常消费；Linux origin、validation、注释内容/分配三种消融 |
-| 保留与原生资源：`retention.go`、`audit.go` | 不同成功/错误/取消路径的持有量；实际 RSS 全部采样有效 | 五个平台正常消费；Linux `retention`/`resources` 消融；RSS 读失败与缺失 guard 分别验证 |
-| 索引：`index*.go`、`reuse.go`、`relations.go` | 字面期望位置/引用/顺序；原子 ticket、scope、复用与内存边界 | 五个平台正常消费；Linux race 与所有 index 消融 |
-| Workspace：`workspace.go`、`coordination.go`、`workqueue.go` | 真实文件、打开缓冲区、通知/执行时序、8:4:1 公平性、完整扫描后的对账 | 五个平台正常消费；Linux race 与所有 workspace 消融；Windows 无权限创建 symlink 时记录不可用，其他平台须执行 |
-| 索引锁边界：`index/query_context_test.go` | 写锁仍被持有时取消返回；合同规定的最多 128 次批次访问；generation 不回绕 | Linux `go test -race -count=1 ./index`，启动边界和返回边界都有超时 |
-| 不可变交付：`native.py`、`delivery.py` | 五平台原生身份、完整套件、严格 boolean 输出；独立 module / 无 replace；离线空缓存实际消费 | 五平台 `consumer` 与 Linux `delivery_regression`；delivery 的九个套件缺一即失败 |
-| 字节与包装：`checkout_e2e.py`、`snapshot_e2e.py`、`vendor_e2e.py` | Git blob 为 checkout 真值；跨 ZIP 元数据/顺序/压缩环境不变；恢复 headers 后实际 vendor 构建 | Linux `delivery_regression`；ZIP 确定性不替代 native 的源码清单/消费验证 |
-| 失败路径：`native_delivery_e2e.py`、`delivery_failures_e2e.py` | 每个负例必须失败于指定阶段；先保留成功 sentinel，再执行失败重跑 | Linux `delivery_regression`；平台不符不能由缺 Go、缺编译器不能由任意别的错误代替 |
-| Runner 合同：`runner_effectiveness_e2e.py`、`assertions.py` | 受控真实子进程，逐次只改变一个条件，验证判定器自身不会假通过 | Linux `delivery_regression`；协议夹具不计入公共 API 行为证明 |
-| 观察探针：`probes/index-query`、`probes/index-scope` | 实际执行量、固定排序/计数；零查询、非法参数须拒绝 | Linux 验证探针可构建及参数边界；时间/分配数仅作观察，不能替代消费者中的资源断言 |
+[`consumer/properties.go`](consumer/properties.go) 用 16 个固定 seed、每个 seed 12 次文本变更，对比独立构造的最终文本和新的索引实例。关系覆盖如下；它们说明公共库已验证的范围，不把库内关系提升为未运行的 LSP 行为。
+
+| 关系 | 当前入口与边界 |
+|---|---|
+| 顺序输入与最终加载一致 | `properties` 比较每次文本和最终 `Snapshot`；文本期望独立构造 |
+| 复用与冷构建一致 | `properties` 比较显式 `Index.Reuse` 与新 Index 的定义和 pending 状态；`index` 同时检查复用修订、generation 与分配，不声称存在隐式 parser cache |
+| 编辑、拒绝和撤销 | `source` / `edit` 验证固定编辑结果及原子拒绝；领域诊断/导航撤销由下游 LSP 验证 |
+| scope 与输入生命周期隔离 | `properties` 验证 scope 切换、旧磁盘读拒绝、打开覆盖层优先、关闭后重新读盘和索引删除；文件系统 root 与 Argo 版本隔离仍是消费者策略 |
+| 取消与后续恢复 | `index` 验证取消不发布部分结果；`workspace` 验证过时 worker 不覆盖新输入；完整 LSP 取消/冷加载等价由插件验收 |
+| 重复通知 | `index` 的 repeated-begin 与 `workspace` 的合并、完成及后续通知用例分别覆盖对应状态 |
+
+[`fuzz_seeds.py`](fuzz_seeds.py) 在实际主机执行 `source`、`edit`、`yamlview` 的固定 Go fuzz seeds，拒绝以交叉编译替代原生运行。五平台都运行 seed replay；这一步不声称执行过 mutation fuzz。
+
+[`fuzz.py`](fuzz.py) 在 Linux 为 `FuzzCoordinates`、`FuzzAtomicEdit`、`FuzzParseRecovery` 分别运行实际 Go mutation campaign。预算只能为每目标 60 或 600 秒；PR、main 和普通手动执行用 60 秒，schedule 用 600 秒，均为两个 fuzz worker、30 秒最小化预算。报告绑定结构化 argv、当前 Go 版本、目标/语料 hash、原始输出与实际执行次数；只有构建或 seed/baseline 完成不能证明 campaign 已执行。失败时保留 stdout/stderr 与发现的 corpus，按 Go 输出的 `-run` 命令重放。
+
+## 固定下游 LSP 消费者
+
+```sh
+python3 tests/downstream.py --output artifacts/downstream-check
+python3 tests/downstream_receipt_e2e.py artifacts/downstream-check/report.json
+```
+
+[`downstream-pins.json`](downstream-pins.json) 定义两个不可变消费提交及 suite；它们是测试基线，并非两个插件最新 `main`。当前消费入口为：
+
+| 消费者 | 实际 suite |
+|---|---|
+| Argo CD | `tests/publication_e2e.py`、`tests/alias_projection_lsp_e2e.py` |
+| Workflows | `tests/e2e/wf-local-rename.py`、`tests/e2e/wf-shared-yaml-projection.py` |
+
+[`downstream.py`](downstream.py) 克隆固定提交，只将候选 toolkit 运行文件注入隔离 checkout 的 vendor 目录，随后检查编译器实际输入路径与字节并构建真实 LSP。原消费者版本声明保留，报告明确标为 `downstream-candidate`；该过程不升级插件仓库或发布产物。候选运行文件必须逐字节匹配当前 toolkit 提交。
+
+两份消费者结果绑定同一个 toolkit/Argo CD/Workflows 三提交组合。报告记录原始 Git commit、文件 mode/blob、唯一允许的 vendor 替换、派生清单和 patch digest；独立 verifier 重建这些信息，源码 tar 包保留跨 artifact 下载所需的文件 mode。必须使用不存在的新 `--output` 目录。`--checkout-cache DIRECTORY` 只把其中的固定本地 clone 用作 Git 对象来源，不能把已修改的工作树当输入；它们须包含 pins 所指提交。
+
+`--control old-vendor`、`wrong-sha`、`missing-file`、`missing-consumer` 分别验证旧源码、错误身份、缺文件和缺消费者不能通过；每次使用独立输出目录。这些 controls 证明 runner 拒绝对应错误，不替代普通 suite 的产品行为断言。
+
+## Runner 判定与故障有效性
 
 ```sh
 python3 tests/runner_effectiveness_e2e.py
 ```
 
-Runner 的表驱动用例覆盖：合法 boolean 对照、空/非对象/字符串/数值输出、重复 JSON 键、输出和退出码矛盾；基线失败、缺失/损坏报告、错误目标目录、构建/工具失败及无关断言失败；未知/重复变体；缺 Go 时不得复用上轮成功检出记录。另执行实际消费者的 `check` 累积逻辑，确认同名 fixture 后续成功不能覆盖先前失败。探针先构建一次再测试参数边界，避免把编译失败误算成“参数被拒绝”。
+[`runner_effectiveness_e2e.py`](runner_effectiveness_e2e.py) 使用真实受控子进程，逐次只改变一个条件，覆盖合法 boolean、空/非对象/字符串/数值输出、重复 JSON key、输出与退出码矛盾、错误目标目录、旧报告、构建/工具失败和无关断言失败。它还执行消费者 `check` 的累积逻辑，保证后续成功不会覆盖同名 fixture 的先前失败。探针先构建再测参数边界，避免把编译失败算成参数拒绝；这些协议控制不计入公共 API 行为证明。
 
-`source`/`edit` 的失效保护、CGO scanner-budget、原生资源释放及 context 持有消融，与原有 index/workspace 消融在同一个默认注册表中执行。一个基线可以为同套件的多个独立变体复用；每个变体仍用独立源码和消费者进程，不减少被测行为。`index-race` 与 `workspace-race` 分别检查各自并发机制，正常五平台套件继续保留完整行为验收。
+普通 ablation 需要基线通过、变体成功构建、执行返回指定失败及匹配本轮报告；崩溃、超时、缺工具或 build failure 不构成检出。原生资源、scanner budget、source/edit、index/workspace 均由同一默认注册表执行；同套件可以复用通过的基线，每个变体仍有独立源码和消费者进程。
+
+手动运行原生工作流并设置 `audit_effectiveness=true`，可以增加以下故障有效性检查；该选项仍执行完整普通矩阵，并让失败使所在 job 失败：
+
+| 入口 | 注入并要求检出的错误 |
+|---|---|
+| [`fuzz_effectiveness.py`](fuzz_effectiveness.py) | 三个可编译的 source/edit/YAML 故障，必须由真实 fuzz 引擎及随后重放命中指定行为失败 |
+| [`property_effectiveness.py`](property_effectiveness.py) | source、cache/reuse、scope、delete、overlay 五种故障，必须在真实公共消费者中命中指定关系断言 |
+| [`downstream_effectiveness.py`](downstream_effectiveness.py) | 四个实际 downstream driver control，以及公共 Schema 类型故障；后者须通过包内 Go 测试、构建固定 CD 消费者，再只使两个指定 `hoverType` 断言失败 |
+
+本地也可直接运行这些脚本。property/downstream 有效性入口要求其默认 `artifacts/property-effectiveness` / `artifacts/downstream-effectiveness` 目录尚不存在；再次运行前先另存已有证据。downstream 入口接受 `--baseline` 及可选 `--checkout-cache`，并要求 baseline 属于本次候选和执行身份。当前普通 PR 不重复这些额外故障实验，但保留普通 ablation、报告负例和 fuzz/downstream 全链证据控制。`fuzz_effectiveness_e2e.py` 验证有效性 runner 的判定方式，本身不运行或宣称完成一次产品 fuzz campaign。
+
+## CI 执行与证据门禁
+
+[原生工作流](../.github/workflows/native.yml) 的完整计划包含以下 job。`plan` 和 `Toolkit required` 始终运行；lane/platform 收据共有十份，五份来自 native consumer，另外五份来自 Linux lanes。
+
+| Job / lane | 执行内容 |
+|---|---|
+| `consumer` × 5 | 五平台原生 seed replay、十二阶段独立 module consumer；各一份收据 |
+| `index_regression` | `go vet`、索引锁边界 race、index/workspace 公共 race consumer、全部注册 ablation |
+| `delivery_regression` | selection/receipt/reporting controls、runner 负例、snapshot/checkout/vendor、空缓存源码消费及失败路径 |
+| `properties` | 确定性状态关系；可选 property 故障有效性检查 |
+| `fuzz` | 三个实际 mutation campaign；可选 fuzz 故障有效性检查 |
+| `downstream` | 固定的两个真实 LSP 消费者及独立收据检查；可选下游故障有效性检查 |
+| `required` / `Toolkit required` | 核对 execution plan、job 结果、同轮收据；完整计划另执行 fuzz/downstream 证据语义负例 |
+| `release` | 仅在 main push 的 required 成功后运行，按 `VERSION` 和 `RELEASE_NOTES.md` 发布尚不存在的 alpha |
+
+[`tools/ci_plan.py`](../tools/ci_plan.py) 仅允许 **PR 的全部修改均为 `README.md`、`DEVELOPMENT.md`、`RELEASE_NOTES.md` 的新增或修改** 时排除产品 lanes；门禁仍验证明确的排除计划及 skipped 结果。`docs/`、`tests/README.md`、合同、其他未知路径、删除/重命名、混合修改、损坏或不可用 diff 均选完整执行。main、schedule、workflow_dispatch 始终完整执行。排除计划不是接受缺失报告的通配规则。
+
+[`tools/ci_receipt.py`](../tools/ci_receipt.py) 把报告绑定当前 SHA、run ID、attempt、lane 和平台，核对实际断言清单与报告语义。缺失、重复、过期或不完整证据失败；单独重跑失败 job 后若其余 producer 仍属旧 attempt，须重跑完整工作流。required 下载真实 fuzz/downstream 输出，用 [`evidence_semantics_e2e.py`](evidence_semantics_e2e.py) 同时检查 writer、plan gate 和独立 verifier 对正确及损坏证据的行为。
+
+[`native-contract.json`](native-contract.json)、[`property-contract.json`](property-contract.json)、[`downstream-contract.json`](downstream-contract.json)、[`downstream-pins.json`](downstream-pins.json) 及 [`docs/testing-ci-baseline.json`](../docs/testing-ci-baseline.json) 是仍在执行的验收输入；最后一个文件提供 mutation 清单和故障 oracle，并非待办计划或可删除的运行报告。
+
+原生矩阵为 Ubuntu 24.04 amd64/arm64（GCC 13.3.0）、macOS 15 Intel/arm64（Apple Clang 17.0.0）和 Windows 2025 amd64（GCC 15.2.0）；exact runner/compiler 配置以 workflow 为准。跨平台构建不替代原生执行。main 发布前再核对目标仍是最新 main；已有 release 不改写，已有 tag 但缺 release 则失败。当前发布标签与 main 的区别见[发行说明](../RELEASE_NOTES.md)。
+
+## 性能证据的使用范围
+
+[`tools/ci_trends.py`](../tools/ci_trends.py) 接受带 run、attempt、SHA、证据引用的显式 warm/cold 原始样本。每项还声明 platform、toolchain、selection、fixture、resources、baseline/candidate variant、passed、非空 phases 及可选 pairID；失败样本必须声明 failureType。分组保留这些维度及成功/失败分类。
+
+至少五对 warm 或三对 cold 样本，且每对都有两个 variant、执行顺序交替，才支持中位数和离群点观察；未配对样本仍标记不足。报告保留原始样本及首个失败，不估计 p95。这些样本门槛本身不能证明优化已验收，也不能用 CI 总时长替代产品测量或改变资源限制。`python3 tests/ci_trends_e2e.py` 验证报告器自身；真实 Zed、长期观察和平台表现仍须各自的证据。
 
 ## 输出与结论范围
 
-输出位于忽略的 `artifacts/`：普通套件为 `<stage>/report.json`，消融为 `ablations/<runID>/<variant>/report.json`，同轮基线为 `baseline-<suite>`；`ablations/report.json` 保存最新汇总。独立入口默认使用 `native`、`delivery`、`checkout`、`snapshot`、`vendor-probe`、`native-delivery`、`delivery-failures`、`runner-effectiveness` 子目录。`consumer/` 和各验证脚本是仓库中的持久输入，运行报告和二进制不作为文档提交。
+输出位于忽略的 `artifacts/`：普通套件为 `<stage>/report.json`，消融为 `ablations/<runID>/<variant>/report.json`，同轮基线为 `baseline-<suite>`；`ablations/report.json` 保存最新汇总。独立入口默认使用 `native`、`delivery`、`checkout`、`snapshot`、`vendor-probe`、`native-delivery`、`delivery-failures`、`runner-effectiveness` 等子目录；新增状态关系、fuzz seeds、mutation campaign 和下游验收分别使用 `properties`、`fuzz-seeds`、`fuzz`、`downstream`。`consumer/` 和各验证脚本是仓库中的持久输入，运行报告和二进制不作为文档提交。
 
 报告记录命令、环境、工具版本、源码/输入/二进制 hash、期望与断言、stdout/stderr 和退出码；`native.py` 与 `e2e.py` 还记录各命令及整轮的 `elapsedSeconds`。原生来源核验使用三次 Git 命令批量读取提交清单和原始 blob hash，保留逐文件字节校验，并拒绝被删的运行输入。原生报告还包含 module ZIP、manifest、消费者 go.mod/go.sum 与适用许可。断言必须是非空对象、非空名称及真实 JSON boolean；重复键、字符串 `"false"`、零断言、缺报告和空成功入口不通过。
 
-普通消费者先在本轮独立目录编译，按 `consumer-<SHA256>` 保留一份可执行文件，报告的 `retainedBinary` 指向该文件；编译失败不能复用历史二进制。Linux 回归证据先打包为 `toolkit-index-regression.tar.gz`，上传时使用零级压缩，避免再对已压缩包进行压缩。源码/测试输入 ZIP、指定失败断言、历史报告和二进制摘要仍保留；原生五平台的小型证据目录保持直接上传。使用报告和 Actions step 时长分别比较构建、测试与归档，冷缓存和命中缓存的运行分开统计。
+普通消费者先在本轮独立目录编译，按 `consumer-<SHA256>` 保留一份可执行文件，报告的 `retainedBinary` 指向该文件；编译失败不能复用历史二进制。Linux 回归证据先打包为 `toolkit-index-regression.tar.gz`，上传时使用零级压缩，避免再对已压缩包进行压缩。源码/测试输入 ZIP、指定失败断言、本轮报告和二进制摘要仍保留；原生五平台的小型证据目录保持直接上传。使用报告和 Actions step 时长分别比较构建、测试与归档，冷缓存和命中缓存的运行分开统计。
 
 本仓验证公共机制及其源码交付。业务资源识别、跨文件跳转、LSP 发布时序、真实编辑器启动时长，由 Argo CD 和 Workflows 仓库各自验证。

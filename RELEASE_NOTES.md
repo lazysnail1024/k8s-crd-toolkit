@@ -1,8 +1,8 @@
 # k8s-crd-toolkit v0.0.1-alpha.1
 
-首个公开 alpha 版本，作为 **Go Module 源码依赖**提供，不包含独立可执行文件。公共 API 合同为 `toolkit-design-5`。
+`VERSION` 对应的公开 alpha 标签作为 **Go Module 源码依赖**提供，不包含独立可执行文件。该已发布标签使用 `toolkit-design-5` 合同；当前主分支使用 `toolkit-design-6`。本文件描述发布标签的范围，主分支的当前实现请查阅 [README](README.md)、[公共合同](CONTRACT.md) 和[架构](docs/architecture.md)。
 
-## 当前能力
+## 标签提供的能力
 
 - 不可变源码快照、UTF-8/UTF-16 位置转换，以及校验式顺序/批量编辑。
 - 带原文范围的容错、多文档 YAML 结构；严格有效值、alias/merge 和位置来源投影。
@@ -13,13 +13,13 @@
 ## 接入要求与边界
 
 - Go 1.27.3；YAML parser 需要 CGO 和目标平台的 C 编译器。
-- 支持原生验证：Linux amd64/arm64、macOS amd64/arm64、Windows amd64。
+- 原生验证平台：Linux amd64/arm64、macOS amd64/arm64、Windows amd64。
 - 公共库不提供独立 LSP、Zed 扩展、Argo 特定规则、Schema 注册表或集群访问。
-- 两个 Argo 插件当前 `main` 锁定源码提交 `db4adba0093ee2a709356aa1c2517e6d62644745`；此前已发布的 Argo CD `v0.0.1-alpha.4` 和 Workflows `v0.0.1-alpha.3` 仍锁定较早的 `2be4e04dc495`。本次 toolkit tag 不会自动升级任一插件。
-- 如需 vendoring，消费者须额外包含 grammar 的 tree-sitter 头文件及 go-tree-sitter 原生 include/src 来源，并保留第三方许可。
+- 标签发布不会自动升级两个插件；它们各自的实际实现提交和合同以 `contracts/toolkit.lock.json` 为准，见[消费者边界](docs/architecture.md#两个插件的实际引用与隔离)。
+- vendoring 需要保留 grammar 的 tree-sitter 头文件、go-tree-sitter 原生 include/src、第三方许可及来源。
 
-## 发行验证
+## 发布与当前开发的关系
 
-GitHub Actions 为 PR 和 `main` 执行五种原生平台消费者、Go vet/race、独立回归与可编译故障注入；仅在同一 `main` 提交全部通过后创建此预发布版本。源码 tag 对应被验收的提交，不重写已存在的 tag 或 release。
+已发布 tag/release 保留其原始内容。`main` 的后续实现和测试改动不自动进入 `v0.0.1-alpha.1`，也不构成对该标签运行过新增测试的声明。仓库发行流程仅在完整主分支验收通过、该提交仍是远端 `main` 且新标签未被占用时创建发布；已存在的 release 不会被覆盖。
 
-详细 API、当前架构与验收命令分别见 [CONTRACT.md](CONTRACT.md)、[docs/architecture.md](docs/architecture.md) 和 [tests/README.md](tests/README.md)。本版本仍为 alpha，公共接口尚不承诺稳定性。
+新增版本应显式更新 `VERSION` 和本文件，并按[验证指南](tests/README.md)运行当前验收流程。本项目仍为 alpha，公共接口尚不承诺稳定性。
