@@ -34,14 +34,16 @@ jobs:
           paths=['<unavailable-diff>']
           if os.environ['EVENT']=='pull_request':
               result=subprocess.run(['git','diff','--name-status','-z','--no-renames',os.environ['BASE'],os.environ['HEAD']],capture_output=True)
-              if result.returncode==0:
-                  tokens=result.stdout.decode().split('\0'); paths=[]
-                  for i in range(0,len(tokens)-1,2):
-                      status,path=tokens[i:i+2]; paths.append(path if status in ('M','A') else status+':'+path)
+              if result.returncode==0 and result.stdout.endswith(b'\0'):
+                  tokens=result.stdout.decode().split('\0')[:-1]
+                  if len(tokens)%2==0 and all(tokens):
+                      paths=[]
+                      for i in range(0,len(tokens),2):
+                          status,path=tokens[i:i+2]; paths.append(path if status in ('M','A') else status+':'+path)
           Path('artifacts').mkdir(exist_ok=True)
           Path('artifacts/paths.json').write_text(json.dumps(paths))
           command=['python','tools/ci_plan.py','plan','--paths','artifacts/paths.json','--output','artifacts/plan.json','--sha',os.environ['GITHUB_SHA'],'--base',os.environ['BASE'] or 'unknown','--head',os.environ['HEAD'] or os.environ['GITHUB_SHA']]
-          command.append('--full') # Keep full active until hosted selection acceptance.
+          if os.environ['EVENT']!='pull_request': command.append('--full')
           subprocess.run(command,check=True)
           plan=json.loads(Path('artifacts/plan.json').read_text())
           with open(os.environ['GITHUB_OUTPUT'],'a') as output: output.write('full='+str(bool(plan['selectedLanes'])).lower()+'\n')
@@ -236,6 +238,7 @@ jobs:
       - name: Verify selection truth table
         run: |
           python tests/ci_plan_e2e.py
+          python tests/ci_workflow_plan_e2e.py
           python tests/ci_receipt_e2e.py
           python tests/ci_receipt_portability_e2e.py
           python tests/ci_negative_e2e.py

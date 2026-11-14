@@ -29,9 +29,13 @@ directory for every attempt. Candidate runtime bytes must match its commit.
 
 `Toolkit required` verifies all selected jobs and same-attempt reports. Partial
 reruns with older producer evidence require rerunning the complete workflow.
-Missing, duplicate, stale or incomplete reports fail. The selector understands
-an explicit prose allowlist, but the workflow forces full execution until hosted
-selection controls are accepted. Main and scheduled runs remain full.
+Missing, duplicate, stale or incomplete reports fail. Pull requests changing only
+`README.md`, `DEVELOPMENT.md`, or `RELEASE_NOTES.md` can omit product lanes;
+the required gate still validates their explicit exclusion plan. Mixed, unknown,
+deleted, renamed, truncated or unavailable changes select full execution.
+Main, scheduled and manual runs always remain full. Run
+`python tests/ci_workflow_plan_e2e.py` to exercise the actual workflow planning
+entry, event boundaries, conservative fallbacks and exclusion gate.
 
 Verifier controls: `python tests/ci_plan_e2e.py` and
 `python tests/ci_receipt_e2e.py`, `python tests/ci_negative_e2e.py`, and
