@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Compile fixed real consumers with the exact candidate vendor bytes, in isolation."""
-import argparse,hashlib,json,os,pathlib,shutil,subprocess,sys,tempfile,time
+import argparse,hashlib,json,os,pathlib,shutil,subprocess,sys,tempfile,time,tarfile
 import os
 CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'tools'))
 from snapshot import create
+from source_inventory import inventory, digest as inventory_digest
 MODULE='github.com/lazysnail1024/k8s-crd-toolkit'
 def sha(p):return hashlib.sha256(p.read_bytes()).hexdigest()
 def tree(root):return {p.relative_to(root).as_posix():sha(p) for p in root.rglob('*') if p.is_file() and '.git' not in p.parts}
@@ -33,7 +34,7 @@ def main():
     return r.stdout
    checkout=dest/'checkout';origin=str(a.checkout_cache/name) if a.checkout_cache else pin['repository']
    run(['git','clone','--no-hardlinks','--no-checkout',origin,str(checkout)],ROOT);run(['git','checkout','--detach',pin['commit']],checkout)
-   before=tree(checkout);vendor=checkout/'vendor'/MODULE
+   before=inventory(checkout);commit_object=run(['git','cat-file','commit',pin['commit']],checkout);vendor=checkout/'vendor'/MODULE
    if a.control!='old-vendor':shutil.rmtree(vendor);vendor.mkdir(parents=True)
    # Preserve the original consumer module/version declaration; the derived
    # vendor tree is the declared candidate dependency and never a release.
@@ -42,9 +43,12 @@ def main():
    if a.control=='missing-file':(vendor/'source/snapshot.go').unlink()
    actual=tree(vendor)
    if actual!=snapshot['files']:raise ValueError('candidate vendor inventory mismatch')
-   after=tree(checkout);changed=sorted(k for k in set(before)|set(after) if before.get(k)!=after.get(k))
+   after=inventory(checkout);changed=sorted(k for k in set(before)|set(after) if before.get(k)!=after.get(k))
    if not changed or any(not k.startswith('vendor/'+MODULE+'/') for k in changed):raise ValueError('unexplained derived source changes')
-   row.update(injection='replace-vendor-runtime',allowedPaths=['vendor/'+MODULE+'/'],patchDigest=hashlib.sha256(json.dumps({k:[before.get(k),after.get(k)] for k in changed},sort_keys=True).encode()).hexdigest(),effectiveSourceTree=hashlib.sha256(json.dumps(after,sort_keys=True).encode()).hexdigest(),vendorDigest=snapshot['sourceSHA256'])
+   patch={k:[before.get(k),after.get(k)] for k in changed}
+   row.update(injection='replace-vendor-runtime',allowedPaths=['vendor/'+MODULE+'/'],originalCommitObject=commit_object,originalInventory=before,derivedInventory=after,sourcePatch=patch,patchDigest=inventory_digest(patch),effectiveSourceTree=inventory_digest(after),vendorDigest=snapshot['sourceSHA256'])
+   with tarfile.open(dest/'source.tar.gz','w:gz') as archive:
+    for file in sorted(after):archive.add(checkout/file,arcname=file,recursive=False)
    # Inspect actual package compiler inputs, not merely go.mod's old version.
    listing=run(['go','list','-deps','-json','./cmd/'+pin['command']],checkout);decoder=json.JSONDecoder();packages=[]
    while listing.strip():

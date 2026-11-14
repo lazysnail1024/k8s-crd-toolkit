@@ -7,6 +7,7 @@ for case in ['named-behavior','build-failure','wrong-oracle','wrong-exit']:
  with tempfile.TemporaryDirectory(prefix='toolkit-fuzz-runner-control-') as tmp:
   tmp=pathlib.Path(tmp);repo=tmp/'repo';shutil.copytree(ROOT,repo,ignore=shutil.ignore_patterns('.git','artifacts','__pycache__'));bin_=tmp/'bin';bin_.mkdir()
   peer=bin_/'go';peer.write_text('#!'+sys.executable+'\n'+'''import os,sys
+if sys.argv[1]=='version':print('go version go1.27.3 linux/amd64');sys.exit(0)
 reasons={'./source':'position 10: got {0 3}, want {0 4}','./edit':'wrong source accepted','./yamlview':'known mapping changed'}
 case=os.environ['CONTROL_CASE'];reason=reasons[sys.argv[2]]
 if case=='build-failure':print('[build failed]');print('declared and not used',file=sys.stderr)

@@ -1,5 +1,6 @@
 """Authoritative behavior inventories for existing regression and downstream reports."""
 import hashlib,json,pathlib
+from source_inventory import verify as verify_source_inventory
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 MODULE='github.com/lazysnail1024/k8s-crd-toolkit'
 def require(ok,message):
@@ -75,6 +76,7 @@ def downstream(report,identity):
  for row in rows:
   name=row['consumer'];contract=contracts[name];require(row.get('passed') is True and row.get('tuple')==expected and row.get('vendorDigest')==snapshot['sourceSHA256'],'invalid downstream identity')
   require(all(hash_string(row.get(k)) for k in ('binarySHA256','patchDigest','effectiveSourceTree')) and bool(row.get('buildMetadata')),'missing binary or derived source identity');steps(row.get('steps'))
+  verify_source_inventory(row,pins[name]['commit'],ROOT,hashes)
   binary=row.get('binaryPath');require(isinstance(binary,str) and pathlib.PurePath(binary).name==pins[name]['command'],'missing actual binary path')
   builds=[x for x in row['steps'] if 'build' in x.get('command',[]) and './cmd/'+pins[name]['command'] in x['command']];require(len(builds)==1 and builds[0]['command'][builds[0]['command'].index('-o')+1]==binary,'binary did not come from expected build')
   deps=row.get('compilerDependencies',[]);require(len(deps)==len(contract['compilerPackages']) and {p.get('ImportPath') for p in deps}==set(contract['compilerPackages']),'compiler package inventory mismatch')

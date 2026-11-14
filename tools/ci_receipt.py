@@ -5,6 +5,8 @@ ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT/'tests'))
 from assertions import exact_stage_inventory
 from ci_report_contracts import regression, downstream
+from fuzz_evidence import verify as verify_fuzz
+from source_inventory import inventory
 PLATFORMS={'linux/amd64','linux/arm64','darwin/amd64','darwin/arm64','windows/amd64'}
 REPORTS={
  'consumer':['artifacts/native/report.json','artifacts/fuzz-seeds/report.json'],
@@ -45,8 +47,7 @@ def check_report(report,lane,platform,path):
   expected=json.loads((ROOT/'tests/property-contract.json').read_text())
   if set(report['assertions'])!=set(expected) or not all(report['assertions'].values()):raise ValueError('property inventory mismatch')
  if lane=='fuzz':
-  campaigns=report.get('campaigns',[])
-  if len(campaigns)!=3 or {x['target'] for x in campaigns}!={'FuzzCoordinates','FuzzAtomicEdit','FuzzParseRecovery'} or any(x.get('passed') is not True or x.get('mutationObserved') is not True or x.get('exitCode')!=0 for x in campaigns):raise ValueError('missing actual fuzz campaign')
+  verify_fuzz(report,identity(),ROOT,platform,os.getenv('GITHUB_EVENT_NAME','local'))
  if lane in ('index_regression','delivery_regression'):regression(report,path)
  if lane=='downstream':downstream(report,identity())
 
@@ -60,8 +61,16 @@ def main():
    if a.lane=='consumer' and path.as_posix()=='artifacts/native/report.json':
     binary=path.parent/('consumer.exe' if a.platform.startswith('windows/') else 'consumer')
     if sha(binary)!=value['binarySHA256'] or sha(path.parent/'inputs.zip')!=value['inputArchiveSHA256']:raise ValueError('actual binary or inputs changed')
+   if a.lane=='fuzz':
+    for campaign in value['campaigns']:
+     for stream in ('stdout','stderr'):
+      if (path.parent/(campaign['package']+'.'+stream)).read_text()!=campaign[stream]:raise ValueError('actual fuzz raw output changed')
    if a.lane=='downstream':
     for consumer in value['consumers']:
+     checkout=pathlib.Path(consumer['binaryPath']).parent/'checkout'
+     actual=inventory(checkout)
+     actual={k:v for k,v in actual.items() if '__pycache__' not in pathlib.PurePosixPath(k).parts}
+     if actual!=consumer['derivedInventory']:raise ValueError('actual consumer source differs from derived inventory')
      if sha(pathlib.Path(consumer['binaryPath']))!=consumer['binarySHA256']:raise ValueError('actual downstream binary changed')
    reports.append(dict(path=path.as_posix(),sha256=hashlib.sha256(raw.encode()).hexdigest(),rawJSON=raw))
   a.directory.mkdir(parents=True,exist_ok=True);receipt=dict(schemaVersion=1,identity=identity(),lane=a.lane,platform=a.platform,reports=reports)

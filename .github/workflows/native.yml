@@ -7,6 +7,11 @@ on:
   schedule:
     - cron: '37 3 * * 2'
   workflow_dispatch:
+    inputs:
+      audit_effectiveness:
+        description: Run real audit fault controls and retain replayable evidence
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -303,6 +308,15 @@ jobs:
           go-version-file: go.mod
           cache: false
       - run: python tests/e2e.py properties
+      - name: Run real audit effectiveness controls
+        if: github.event_name == 'workflow_dispatch' && inputs.audit_effectiveness
+        run: python tests/property_effectiveness.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.audit_effectiveness
+        with:
+          name: toolkit-property-effectiveness-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/property-effectiveness/
+          if-no-files-found: error
       - name: Bind successful reports to this attempt
         run: python tools/ci_receipt.py write --lane properties --platform "linux/amd64" --report artifacts/properties/report.json --directory artifacts/receipts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -335,6 +349,15 @@ jobs:
           go-version-file: go.mod
           cache: false
       - run: python tests/fuzz.py --seconds ${{ github.event_name == 'schedule' && '600' || '60' }}
+      - name: Run real audit effectiveness controls
+        if: github.event_name == 'workflow_dispatch' && inputs.audit_effectiveness
+        run: python tests/fuzz_effectiveness.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.audit_effectiveness
+        with:
+          name: toolkit-fuzz-effectiveness-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/fuzz-effectiveness/
+          if-no-files-found: error
       - name: Bind successful reports to this attempt
         run: python tools/ci_receipt.py write --lane fuzz --platform "linux/amd64" --report artifacts/fuzz/report.json --directory artifacts/receipts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -369,6 +392,15 @@ jobs:
       - run: |
           python tests/downstream.py
           python tests/downstream_receipt_e2e.py artifacts/downstream/report.json
+      - name: Run real audit effectiveness controls
+        if: github.event_name == 'workflow_dispatch' && inputs.audit_effectiveness
+        run: python tests/downstream_effectiveness.py
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always() && github.event_name == 'workflow_dispatch' && inputs.audit_effectiveness
+        with:
+          name: toolkit-downstream-effectiveness-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/downstream-effectiveness/
+          if-no-files-found: error
       - name: Bind successful reports to this attempt
         run: python tools/ci_receipt.py write --lane downstream --platform "linux/amd64" --report artifacts/downstream/report.json --directory artifacts/receipts
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -400,6 +432,16 @@ jobs:
         with:
           pattern: toolkit-receipt-*-${{ github.run_id }}-${{ github.run_attempt }}
           path: artifacts/receipts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: needs.plan.outputs.full == 'true'
+        with:
+          name: toolkit-downstream-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/downstream
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        if: needs.plan.outputs.full == 'true'
+        with:
+          name: toolkit-fuzz-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/fuzz
       - name: Validate expected jobs and fresh evidence
         env:
           NEEDS: ${{ toJSON(needs) }}
@@ -414,6 +456,23 @@ jobs:
           plan=json.loads(Path('artifacts/selection/plan.json').read_text())
           subprocess.run(['python','tools/ci_receipt.py','verify','--directory','artifacts/receipts','--lanes',json.dumps(plan['selectedLanes'])],check=True)
           PYCODE
+      - name: Reject contradictory evidence through the complete production chain
+        if: needs.plan.outputs.full == 'true'
+        run: |
+          python - <<'PYCODE'
+          import pathlib, tarfile
+          for archive in pathlib.Path('artifacts/downstream').glob('*/source.tar.gz'):
+              with tarfile.open(archive) as bundle:
+                  bundle.extractall(archive.parent/'checkout', filter='data')
+          PYCODE
+          python tests/evidence_semantics_e2e.py artifacts/fuzz/report.json fuzz artifacts/receipts artifacts/selection/plan.json artifacts/results.json
+          python tests/evidence_semantics_e2e.py artifacts/downstream/report.json downstream artifacts/receipts artifacts/selection/plan.json artifacts/results.json
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always() && needs.plan.outputs.full == 'true'
+        with:
+          name: toolkit-evidence-semantic-controls-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/evidence-semantic-controls
+          if-no-files-found: error
   release:
     name: Publish alpha after complete main acceptance
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'

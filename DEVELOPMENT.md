@@ -16,7 +16,9 @@ Each command writes replayable evidence below `artifacts/`; fuzz stdout and
 failure corpora are retained even when a campaign fails. A successful seed
 replay or build alone is not a completed fuzz campaign. Periodic CI uses
 600 seconds per target; PRs use 60 seconds, two workers and 30 seconds of
-minimization. Replay a retained failure with Go's printed `-run` command.
+minimization. Replay a retained failure with Go's printed `-run` command. Receipts bind structured
+argv, the locked Go version, target/corpus hashes, raw streams and actual mutation
+execution counts; seed-only or baseline-only output cannot substantiate a campaign.
 
 `python tests/downstream.py` clones the two immutable consumers in
 `tests/downstream-pins.json`, injects the candidate runtime into their vendor
@@ -25,7 +27,11 @@ projection, editing and lifecycle consumers. The derived sources are explicitly
 `downstream-candidate`; they never replace downstream checkouts or publish a
 release. `--checkout-cache DIRECTORY` may use local clones only as Git object
 sources. Both reports must bind the same three-SHA tuple. Use a fresh `--output`
-directory for every attempt. Candidate runtime bytes must match its commit.
+directory for every attempt. Candidate runtime bytes must match its commit. Original
+file modes and Git blob identities reconstruct the pinned consumer commit tree.
+The verifier independently reconstructs the only permitted change (candidate vendor
+replacement), the derived inventory and its actual patch digest. A source archive
+preserves file modes when evidence crosses CI artifact storage.
 
 `Toolkit required` verifies all selected jobs and same-attempt reports. Partial
 reruns with older producer evidence require rerunning the complete workflow.
@@ -36,6 +42,10 @@ deleted, renamed, truncated or unavailable changes select full execution.
 Main, scheduled and manual runs always remain full. Run
 `python tests/ci_workflow_plan_e2e.py` to exercise the actual workflow planning
 entry, event boundaries, conservative fallbacks and exclusion gate.
+
+The required job also runs `tests/evidence_semantics_e2e.py` against actual fuzz
+and downstream artifacts plus all ten same-attempt receipts, recording writer,
+plan gate and independent verifier results for positive and damaged evidence.
 
 Verifier controls: `python tests/ci_plan_e2e.py` and
 `python tests/ci_receipt_e2e.py`, `python tests/ci_negative_e2e.py`, and
@@ -78,3 +88,27 @@ Property coverage maps to the seven P08 relations as follows:
 
 The table identifies ownership and existing checks; it does not upgrade narrower
 library assertions into unexecuted protocol or target-version acceptance.
+
+### One-time audit effectiveness evidence
+
+Dispatch the existing native workflow with `audit_effectiveness=true` to run the
+three compiled fuzz mutants, five property faults, four actual downstream driver
+controls, and public schema type fault. This remains a full native workflow with
+all existing required jobs and ordinary cases; a failing effectiveness command
+fails its existing job. Ordinary PRs retain the full F5/F6 evidence controls but
+do not repeat these additional fault experiments.
+
+The extra artifacts are named `toolkit-fuzz-effectiveness`,
+`toolkit-property-effectiveness`, and `toolkit-downstream-effectiveness`, each
+suffixed with the run ID and attempt. They retain current-source identities,
+mutation inputs, real process output and named assertions. The public type fault
+must pass package-local `go test -count=1 ./...` and compile the pinned Argo CD consumer,
+then fail only the two designated version-specific `hoverType` assertions. All
+other pinned cases and assertions, including clean shutdown, must succeed with
+no execution or protocol errors. Package-local tests are explicitly
+not the external consumer suites. The normal and faulty consumers share the
+same T/A/W baseline tuple. Local entrypoints are `tests/fuzz_effectiveness.py`,
+`tests/property_effectiveness.py`, and `tests/downstream_effectiveness.py`;
+the last accepts `--baseline` and optional `--checkout-cache` paths. Use fresh
+output directories. Hosted artifacts from this dispatch are additional audit
+evidence, not a substitute for the ordinary PR workflow.
