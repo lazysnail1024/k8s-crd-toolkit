@@ -14,7 +14,7 @@ try:
  events=[json.loads(line) for line in r.stdout.splitlines()];report['completed']=[x['Test'] for x in events if x.get('Action')=='pass' and 'Test' in x]
  wanted={'FuzzCoordinates':4,'FuzzAtomicEdit':2,'FuzzParseRecovery':3}
  report['passed']=r.returncode==0 and all(target in report['completed'] and all(target+'/seed#'+str(i) in report['completed'] for i in range(count)) for target,count in wanted.items())
- report['inputHashes']={str(f.relative_to(ROOT)):hashlib.sha256(f.read_bytes()).hexdigest() for f in ROOT.glob('*/*_fuzz_test.go')}
+ report['inputHashes']={f.relative_to(ROOT).as_posix():hashlib.sha256(f.read_bytes()).hexdigest() for f in ROOT.glob('*/*_fuzz_test.go')}
 except Exception as e:report['error']=repr(e)
 finally:(a.output/'report.json').write_text(json.dumps(report,indent=2))
 print(json.dumps({'passed':report['passed'],'error':report.get('error')}));sys.exit(not report['passed'])

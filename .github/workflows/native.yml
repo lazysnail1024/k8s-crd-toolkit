@@ -237,6 +237,7 @@ jobs:
         run: |
           python tests/ci_plan_e2e.py
           python tests/ci_receipt_e2e.py
+          python tests/ci_receipt_portability_e2e.py
           python tests/ci_negative_e2e.py
           python tests/ci_trends_e2e.py
           python tests/fuzz_effectiveness_e2e.py

@@ -32,7 +32,7 @@ def check_report(report,lane,platform,path):
   events=[decode(line) for line in report['steps'][0]['stdout'].splitlines()]
   actual=[x['Test'] for x in events if x.get('Action')=='pass' and 'Test' in x]
   if actual!=report['completed']:raise ValueError('seed result not bound to Go output')
-  expected={str(f.relative_to(ROOT)):sha(f) for f in ROOT.glob('*/*_fuzz_test.go')}
+  expected={f.relative_to(ROOT).as_posix():sha(f) for f in ROOT.glob('*/*_fuzz_test.go')}
   if report.get('inputHashes')!=expected:raise ValueError('seed test inputs mismatch')
  elif lane=='consumer':
   expected=json.loads((ROOT/'tests/native-contract.json').read_text())
@@ -53,17 +53,17 @@ def check_report(report,lane,platform,path):
 def main():
  p=argparse.ArgumentParser();p.add_argument('command',choices=['write','verify']);p.add_argument('--lane');p.add_argument('--platform',default='linux/amd64');p.add_argument('--report',action='append',type=pathlib.Path);p.add_argument('--directory',type=pathlib.Path,required=True);p.add_argument('--lanes');a=p.parse_args()
  if a.command=='write':
-  if [str(p) for p in a.report or []]!=REPORTS.get(a.lane):raise ValueError('required report inventory mismatch')
+  if [p.as_posix() for p in a.report or []]!=REPORTS.get(a.lane):raise ValueError('required report inventory mismatch')
   reports=[]
   for path in a.report:
-   raw=path.read_text();value=decode(raw);check_report(value,a.lane,a.platform,str(path))
-   if a.lane=='consumer' and str(path)=='artifacts/native/report.json':
+   raw=path.read_text();value=decode(raw);check_report(value,a.lane,a.platform,path.as_posix())
+   if a.lane=='consumer' and path.as_posix()=='artifacts/native/report.json':
     binary=path.parent/('consumer.exe' if a.platform.startswith('windows/') else 'consumer')
     if sha(binary)!=value['binarySHA256'] or sha(path.parent/'inputs.zip')!=value['inputArchiveSHA256']:raise ValueError('actual binary or inputs changed')
    if a.lane=='downstream':
     for consumer in value['consumers']:
      if sha(pathlib.Path(consumer['binaryPath']))!=consumer['binarySHA256']:raise ValueError('actual downstream binary changed')
-   reports.append(dict(path=str(path),sha256=hashlib.sha256(raw.encode()).hexdigest(),rawJSON=raw))
+   reports.append(dict(path=path.as_posix(),sha256=hashlib.sha256(raw.encode()).hexdigest(),rawJSON=raw))
   a.directory.mkdir(parents=True,exist_ok=True);receipt=dict(schemaVersion=1,identity=identity(),lane=a.lane,platform=a.platform,reports=reports)
   (a.directory/(a.lane+'-'+a.platform.replace('/','-')+'.json')).write_text(json.dumps(receipt,indent=2))
  else:
