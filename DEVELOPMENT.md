@@ -61,6 +61,51 @@ The two Argo plugins upgrade independently. Their actual pins are documented in
 pins are test inputs, not the latest plugin versions. Candidate injection into
 an isolated downstream checkout does not update or publish either plugin.
 
+## Repeatable consumer upgrades
+
+1. Compare the consumer's pinned contract with the proposed contract. State the
+   behavior or measured benefit that justifies adoption, and define independent
+   consumer expectations before implementation changes. Select an immutable
+   toolkit commit; the contract ID, module version and release tag are separate
+   identities.
+2. Verify that commit from an independent checkout with `GOWORK=off` and no local
+   `replace`. Run the native consumer with `--source-commit`, then the fixed
+   downstream runners below. Use a new output directory for each run.
+3. In each adopting consumer, explicitly update its implementation lock, contract
+   snapshot, module sums and vendor inputs together, including native support
+   files. Verify the actual compiler inputs and binary metadata, then run that
+   product's CLI/LSP diagnostics, projection, cancellation, editing and memory
+   scenarios. Preserve the previous pinned combination for rebuilding.
+4. Record adoption only against the consumer commit that contains those inputs.
+   Host acceptance and publication are separate steps with their own artifact
+   identities and authorization. Workflows should measure parser scheduling on
+   its own workload before adopting a newer contract for that benefit.
+
+```sh
+python3 tools/snapshot.py --output artifacts/upgrade-snapshot
+GITHUB_SHA="$(git rev-parse HEAD)" GITHUB_RUN_ID=local-upgrade GITHUB_RUN_ATTEMPT=1 \
+  python3 tests/downstream.py --output artifacts/upgrade-downstream
+python3 tests/downstream_receipt_e2e.py artifacts/upgrade-downstream/report.json
+python3 tests/evidence_semantics_e2e.py artifacts/upgrade-downstream/report.json downstream
+```
+
+The snapshot manifest records runtime-file, contract and ZIP hashes; its local
+content version is explicitly unpublished and does not by itself prove a Git
+commit. The downstream runner requires runtime bytes to match toolkit HEAD and
+records the fixed consumer commits, derived vendor inventory, compiler inputs,
+binary hashes and suite reports. It deliberately retains the consumers' original
+module declarations, so the injected binary's module version alone is not its
+candidate identity. The verifier reconstructs the derived source evidence.
+
+Use existing delivery reports to keep four conclusions separate: **library
+compatibility with fixed consumers**, **consumer candidate acceptance**,
+**consumer adoption**, and **publication**. A downstream report proves only the
+first within its selected suites. Adoption needs the actual consumer lock,
+contract and vendor identity; publication needs the released source and asset
+identity, and host acceptance needs the package actually loaded by the editor.
+These tools do not generate a combined adoption or release receipt. Documentation
+checks do not establish new runtime acceptance.
+
 ## CI and publication
 
 `Toolkit required` validates the execution plan and reports from the same run
