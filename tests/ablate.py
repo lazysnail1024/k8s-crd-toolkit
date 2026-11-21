@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Reproduce behavior ablations in unique temporary copies; never edit baseline."""
-import pathlib,tempfile,shutil,subprocess,json,hashlib,sys,time
-import os
+import concurrent.futures,hashlib,json,os,pathlib,shutil,subprocess,sys,tempfile,time
 CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 root=pathlib.Path(__file__).resolve().parents[1]
 variants=[('source','source/snapshot.go','next <= s.revision','false','revision'),('edit','edit/plan.go','text != r.ExpectedText','text != text','expected'),('yaml','yamlview/view.go','len(s.Text()) > 5*1024*1024','false','bytes-limit'),('yaml-depth','yamlview/internal/parser/parser.go','depth > 256','false','depth-limit'),('resources','yamlview/internal/parser/parser.go','defer value.tree.Close()','// tree release deliberately removed','resident-growth'),('budget','yamlview/internal/parser/grammar/scanner.c.inc','unsigned size = 0;\n    // Zig-zag','unsigned size = 0;\n    if (scanner->ind_typ_stk.size > 250) { toolkit_yaml_budget_exceeded = true; return 0; }\n    // Zig-zag','mapping-256-complete')]
@@ -54,28 +53,72 @@ def execute(stage,target,destination):
  if observed.get('target')!=str(target.resolve()) or observed.get('stage')!=stage:raise RuntimeError('report does not belong to the requested consumer')
  return child,observed
 
+SERIAL_SUITES={'resources','retention','resume'}
+workers=min(4,max(1,os.cpu_count() or 1))
+
+def run_baseline(suite):
+ child,baseline=execute(suite+'-ablation-baseline',root,out/('baseline-'+suite))
+ if child.returncode!=0 or baseline.get('passed') is not True:raise RuntimeError('baseline failed for '+suite)
+ return suite,baseline
+
+def run_variant(entry):
+ idx,stage,file,old,new,assertion=entry
+ suite=stage.split('-')[0]
+ row={'variant':stage,'expectedFailedAssertion':assertion,'passed':False}
+ if baselines[suite]['assertions'].get(assertion) is not True:raise RuntimeError('baseline never passed the named assertion: '+assertion)
+ with tempfile.TemporaryDirectory(prefix='toolkit-ablation-') as directory:
+  target=pathlib.Path(directory)/'toolkit';shutil.copytree(root,target,ignore=shutil.ignore_patterns('.git','artifacts','__pycache__'))
+  path=target/file;before=path.read_text()
+  if old not in before:raise RuntimeError('mutation no longer matches source: '+stage)
+  path.write_text(before.replace(old,new,1))
+  destination=out/stage
+  child,observed=execute(stage+'-ablation',target,destination)
+  row.update(file=file,old=old,new=new,baselineSHA256=hashlib.sha256(before.encode()).hexdigest(),variantSHA256=hashlib.sha256(path.read_bytes()).hexdigest(),report=str(destination/'report.json'),baselineReport=str(out/('baseline-'+suite)/'report.json'))
+  row['baselineEvidence']={k:baselines[suite].get(k) for k in ('stage','passed','buildSucceeded','consumerExitCode','assertions','steps')}
+  row['variantEvidence']={k:observed.get(k) for k in ('stage','passed','buildSucceeded','consumerExitCode','assertions','steps','error')}
+  row['passed']=child.returncode==1 and observed.get('passed') is False and 'error' not in observed and observed.get('buildSucceeded') is True and observed.get('consumerExitCode')==1 and observed.get('assertions',{}).get(assertion) is False and all(s['exitCode']==0 for s in observed['steps'][:-1])
+  return idx,row,stage,assertion
+
 try:
- for stage,file,old,new,assertion in variants:
-  row={'variant':stage,'expectedFailedAssertion':assertion,'passed':False};summary['cases'].append(row)
-  suite=stage.split('-')[0]
-  if suite not in baselines:
-   child,baseline=execute(suite+'-ablation-baseline',root,out/('baseline-'+suite))
-   if child.returncode!=0 or baseline.get('passed') is not True:raise RuntimeError('baseline failed for '+suite)
-   baselines[suite]=baseline
-  if baselines[suite]['assertions'].get(assertion) is not True:raise RuntimeError('baseline never passed the named assertion: '+assertion)
-  with tempfile.TemporaryDirectory(prefix='toolkit-ablation-') as directory:
-   target=pathlib.Path(directory)/'toolkit';shutil.copytree(root,target,ignore=shutil.ignore_patterns('.git','artifacts','__pycache__'))
-   path=target/file;before=path.read_text()
-   if old not in before:raise RuntimeError('mutation no longer matches source: '+stage)
-   path.write_text(before.replace(old,new,1))
-   destination=out/stage
-   child,observed=execute(stage+'-ablation',target,destination)
-   row.update(file=file,old=old,new=new,baselineSHA256=hashlib.sha256(before.encode()).hexdigest(),variantSHA256=hashlib.sha256(path.read_bytes()).hexdigest(),report=str(destination/'report.json'),baselineReport=str(out/('baseline-'+suite)/'report.json'))
-   row['baselineEvidence']={k:baselines[suite].get(k) for k in ('stage','passed','buildSucceeded','consumerExitCode','assertions','steps')}
-   row['variantEvidence']={k:observed.get(k) for k in ('stage','passed','buildSucceeded','consumerExitCode','assertions','steps','error')}
-   row['passed']=child.returncode==1 and observed.get('passed') is False and 'error' not in observed and observed.get('buildSucceeded') is True and observed.get('consumerExitCode')==1 and observed.get('assertions',{}).get(assertion) is False and all(s['exitCode']==0 for s in observed['steps'][:-1])
-   if not row['passed']:raise RuntimeError('mutation was not killed by the named behavior assertion: '+stage)
+ suites=list(dict.fromkeys(v[0].split('-')[0] for v in variants))
+ parallel_suites=[s for s in suites if s not in SERIAL_SUITES]
+ serial_suites=[s for s in suites if s in SERIAL_SUITES]
+ if len(parallel_suites)>1 and workers>1:
+  with concurrent.futures.ThreadPoolExecutor(max_workers=min(workers,len(parallel_suites))) as pool:
+   for suite,baseline in pool.map(run_baseline,parallel_suites):baselines[suite]=baseline
+ else:
+  for suite in parallel_suites:
+   _,baseline=run_baseline(suite);baselines[suite]=baseline
+ for suite in serial_suites:
+  _,baseline=run_baseline(suite);baselines[suite]=baseline
+ indexed=[(i,*v) for i,v in enumerate(variants)]
+ parallel_items=[x for x in indexed if x[1].split('-')[0] not in SERIAL_SUITES]
+ serial_items=[x for x in indexed if x[1].split('-')[0] in SERIAL_SUITES]
+ results={}
+ if len(parallel_items)>1 and workers>1:
+  with concurrent.futures.ThreadPoolExecutor(max_workers=min(workers,len(parallel_items))) as pool:
+   for idx,row,stage,assertion in pool.map(run_variant,parallel_items):
+    results[idx]=row
+    if not row['passed']:
+     summary['cases']=[results[i] for i in sorted(results)]
+     raise RuntimeError('mutation was not killed by the named behavior assertion: '+stage)
+    print(stage,assertion,'killed',flush=True)
+ else:
+  for item in parallel_items:
+   idx,row,stage,assertion=run_variant(item)
+   results[idx]=row
+   if not row['passed']:
+    summary['cases']=[results[i] for i in sorted(results)]
+    raise RuntimeError('mutation was not killed by the named behavior assertion: '+stage)
    print(stage,assertion,'killed',flush=True)
+ for item in serial_items:
+  idx,row,stage,assertion=run_variant(item)
+  results[idx]=row
+  if not row['passed']:
+   summary['cases']=[results[i] for i in sorted(results)]
+   raise RuntimeError('mutation was not killed by the named behavior assertion: '+stage)
+  print(stage,assertion,'killed',flush=True)
+ summary['cases']=[results[i] for i in range(len(variants))]
  summary['passed']=len(summary['cases'])==len(variants) and all(row['passed'] for row in summary['cases'])
 except Exception as error:summary['error']=repr(error)
 finally:
