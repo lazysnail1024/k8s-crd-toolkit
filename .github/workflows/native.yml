@@ -303,10 +303,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Scope CGO cache to the compiler and runner image
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/cache
+          { "$CC" --version; printf '%s\n' "$ImageOS" "$ImageVersion"; } > artifacts/cache/compiler.txt
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
-          cache: false
+          check-latest: false
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            artifacts/cache/compiler.txt
+            yamlview/**/*.inc
+            yamlview/**/*.h
       - run: python tests/e2e.py properties
       - name: Run real audit effectiveness controls
         if: github.event_name == 'workflow_dispatch' && inputs.audit_effectiveness
@@ -344,10 +356,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - name: Scope CGO cache to the compiler and runner image
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/cache
+          { "$CC" --version; printf '%s\n' "$ImageOS" "$ImageVersion"; } > artifacts/cache/compiler.txt
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
-          cache: false
+          check-latest: false
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            artifacts/cache/compiler.txt
+            yamlview/**/*.inc
+            yamlview/**/*.h
       - run: python tests/fuzz.py --seconds ${{ github.event_name == 'schedule' && '600' || '60' }}
       - name: Run real audit effectiveness controls
         if: github.event_name == 'workflow_dispatch' && inputs.audit_effectiveness
@@ -388,6 +412,7 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e
         with:
           go-version-file: go.mod
+          check-latest: false
           cache: false
       - run: |
           python tests/downstream.py

@@ -14,7 +14,6 @@ import zipfile
 
 from assertions import parse_assertions
 
-import os
 CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 root = pathlib.Path(__file__).resolve().parents[1]
 parser = argparse.ArgumentParser()
@@ -127,10 +126,11 @@ finally:
     try:
         report['targetHashes'] = {str(p.relative_to(target)): sha(p)
                                   for p in target.rglob('*') if input_file(p)}
-        report['hashes'] = {str(p.relative_to(root)): sha(p)
-                            for p in root.rglob('*') if input_file(p)}
+        report['hashes'] = (dict(report['targetHashes']) if target == root else
+                            {str(p.relative_to(root)): sha(p)
+                             for p in root.rglob('*') if input_file(p)})
         archive = out / ('inputs-' + run_id + '.zip')
-        with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED) as bundle:
+        with zipfile.ZipFile(archive, 'w', compression=zipfile.ZIP_DEFLATED, compresslevel=1) as bundle:
             for prefix, tree in [('target', target), ('tests', root / 'tests')]:
                 for path in tree.rglob('*'):
                     if input_file(path):

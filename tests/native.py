@@ -2,7 +2,6 @@
 """Run existing public consumers natively from a standalone content-pinned module."""
 import argparse,hashlib,json,os,pathlib,platform,shutil,subprocess,sys,tempfile,time,zipfile
 from assertions import parse_assertions, exact_stage_inventory
-import os
 CI_IDENTITY = {k: os.getenv(k, 'local') for k in ('GITHUB_SHA', 'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')}
 ROOT=pathlib.Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT/'tools'));from snapshot import create
 p=argparse.ArgumentParser();p.add_argument('--expected-platform',required=True);p.add_argument('--cc-version');p.add_argument('--source-commit',help='require module bytes to match this Git commit');p.add_argument('--output',type=pathlib.Path,default=ROOT/'artifacts/native');args=p.parse_args();out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
@@ -64,15 +63,19 @@ try:
   required([go,'mod','tidy'],c);required([go,'mod','verify'],c);report['moduleGraph']=required([go,'list','-m','all'],c);report['assertions']['noReplace']='=>' not in report['moduleGraph'] and 'replace' not in (c/'go.mod').read_text()
   report['consumerGoMod']=(c/'go.mod').read_text();report['consumerGoSum']=(c/'go.sum').read_text()
   archive=out/'inputs.zip'
-  with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED) as z:
+  with zipfile.ZipFile(archive,'w',compression=zipfile.ZIP_DEFLATED,compresslevel=1) as z:
    for prefix,tree in [('consumer',c),('tools',ROOT/'tools'),('tests',ROOT/'tests')]:
     for f in tree.rglob('*'):
      if f.is_file() and '__pycache__' not in f.parts:z.write(f,prefix+'/'+f.relative_to(tree).as_posix())
   report['inputArchiveSHA256']=sha(archive)
   binary=out/('consumer.exe' if os.name=='nt' else 'consumer');required([go,'build','-trimpath','-mod=readonly','-buildvcs=false','-o',str(binary),'.'],c);report['binarySHA256']=sha(binary);required([go,'version','-m',str(binary)],c)
   licenses=out/'licenses';licenses.mkdir(exist_ok=True);shutil.copyfile(ROOT/'LICENSE',licenses/'toolkit-MIT');shutil.copyfile(pathlib.Path(info['GOROOT'])/'LICENSE',licenses/'Go-BSD');shutil.copyfile(ROOT/'yamlview/internal/parser/grammar/LICENSE',licenses/'yaml-grammar-MIT')
-  for module in ['github.com/tree-sitter/go-tree-sitter','github.com/mattn/go-pointer','github.com/santhosh-tekuri/jsonschema/v6','gopkg.in/yaml.v3','sigs.k8s.io/yaml','go.yaml.in/yaml/v2','golang.org/x/text']:
-   meta=json.loads(required([go,'list','-m','-json',module],c));source=pathlib.Path(meta['Dir']);name=module.replace('/','-')
+  license_modules=['github.com/tree-sitter/go-tree-sitter','github.com/mattn/go-pointer','github.com/santhosh-tekuri/jsonschema/v6','gopkg.in/yaml.v3','sigs.k8s.io/yaml','go.yaml.in/yaml/v2','golang.org/x/text']
+  mod_stream=required([go,'list','-m','-json']+license_modules,c);decoder=json.JSONDecoder();mod_meta={}
+  while mod_stream.strip():
+   item,end=decoder.raw_decode(mod_stream.lstrip());mod_meta[item['Path']]=item;mod_stream=mod_stream.lstrip()[end:]
+  for module in license_modules:
+   source=pathlib.Path(mod_meta[module]['Dir']);name=module.replace('/','-')
    shutil.copyfile(source/'LICENSE',licenses/(name+'-LICENSE'))
    if (source/'src/unicode/LICENSE').is_file():shutil.copyfile(source/'src/unicode/LICENSE',licenses/'tree-sitter-Unicode')
   for stage in ['source','edit','yaml','yamlvalue','schemaquery','audit','budget','retention','resume','resources','index','workspace']:
