@@ -2,14 +2,14 @@
 
 A Go library for Kubernetes CRD source analysis. It provides immutable text snapshots, YAML structure and effective values, compiled JSON Schema queries, checked text edits, incremental symbol indexes and bounded workspace discovery. Argo domain rules, LSP servers, editor adapters and cluster operations remain in consumers.
 
-Published module: **[v0.0.1-alpha.1](https://github.com/lazysnail1024/k8s-crd-toolkit/releases/tag/v0.0.1-alpha.1)**. This is a Go source module, with no standalone binary to install. The published tag uses contract `toolkit-design-5`; current source uses `toolkit-design-6`. The API may change during alpha development. Published tags retain their original implementation; later changes on main require an explicit dependency upgrade.
+Published module: **[v0.0.1-alpha.2](https://github.com/lazysnail1024/k8s-crd-toolkit/releases/tag/v0.0.1-alpha.2)**. This is a Go source module, with no standalone binary to install. The published tag uses contract `toolkit-design-6`; the earlier `v0.0.1-alpha.1` tag uses `toolkit-design-5`. The API may change during alpha development. Published tags retain their original implementation; later changes on main require an explicit dependency upgrade.
 
 ## Use
 
 Requires **Go 1.27.3**. YAML parsing also requires a native C compiler and `CGO_ENABLED=1`.
 
 ```sh
-go get github.com/lazysnail1024/k8s-crd-toolkit@v0.0.1-alpha.1
+go get github.com/lazysnail1024/k8s-crd-toolkit@v0.0.1-alpha.2
 ```
 
 Parse YAML while preserving original source locations:

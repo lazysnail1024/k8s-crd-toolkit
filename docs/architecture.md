@@ -182,7 +182,7 @@ Scanner 不跟随根以下的符号链接；根本身为符号链接会产生显
 
 ## 当前 CI 与 alpha 发布门槛
 
-本仓是源码库，不生成 LSP 二进制，交付对象是 GitHub 源码 tag/Go Module。`VERSION` 仍为已发布的 `0.0.1-alpha.1`；[发行说明](../RELEASE_NOTES.md)描述该标签，当前主分支 API 以 `CONTRACT.md` 为准。
+This repository is a source library: it builds no LSP binary and delivers GitHub source tags as a Go module. `VERSION` names the current alpha release, `0.0.1-alpha.2` (contract `toolkit-design-6`); the [release notes](../RELEASE_NOTES.md) describe that tag, and `CONTRACT.md` defines the API on `main`.
 
 - [native.yml](../.github/workflows/native.yml) 的完整执行包含五平台公共消费者与确定性 fuzz seed replay，以及 Linux Go vet/race、buildable ablation、源码交付、property、mutation fuzz 和固定下游 LSP 消费者。仅修改 `README.md`、`DEVELOPMENT.md`、`RELEASE_NOTES.md` 的 PR 可以形成显式排除计划；未知路径、删除、重命名、混合修改及不可用 diff 均执行完整计划。`main`、schedule、workflow_dispatch 始终执行完整计划。
 - 源码验收要求提交 hash 与构建输入按字节匹配，验证无本地 Go Module `replace`；artifact 保留输入、报告和失败证据，不能把某个平台的交叉编译当作另一个平台的执行证明。
